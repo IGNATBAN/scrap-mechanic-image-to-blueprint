@@ -438,3 +438,5 @@ const Viewer = (() => {
     scale: () => st.scale,
   };
 })();
+
+export { Viewer };

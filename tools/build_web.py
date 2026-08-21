@@ -43,6 +43,18 @@ def main() -> int:
                    "values": [round(float(v), 7) for v in mask.ravel()]}, fh)
     print("bluenoise.json  ->", os.path.getsize(out), "байт")
 
+    # canvas.js один на обе версии: десктоп грузит его обычным скриптом,
+    # веб — модулем, поэтому копии дописывается строчка экспорта.
+    canvas_src = os.path.join(ROOT, "web", "static", "canvas.js")
+    canvas_dst = os.path.join(WEB, "js", "canvas.js")
+    text = open(canvas_src, encoding="utf-8").read()
+    if "export { Viewer }" not in text:
+        text += chr(10) + "export { Viewer };" + chr(10)
+    os.makedirs(os.path.dirname(canvas_dst), exist_ok=True)
+    with open(canvas_dst, "w", encoding="utf-8") as fh:
+        fh.write(text)
+    print("canvas.js       ->", len(text), "знаков (+ export)")
+
     vec = os.path.join(ROOT, "tests", "vectors.json")
     if os.path.isfile(vec):
         dst = os.path.join(WEB, "tests", "vectors.json")

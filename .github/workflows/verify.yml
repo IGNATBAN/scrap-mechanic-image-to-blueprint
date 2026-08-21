@@ -1,9 +1,13 @@
-# Самопроверка на каждый коммит.
+# Самопроверка на каждый коммит: Python и JavaScript против одного эталона.
 #
-# Игра для неё не нужна: палитра краскопульта и каталог блоков зашиты в код,
+# Игра для этого не нужна: палитра краскопульта и каталог блоков зашиты в код,
 # таблица материалов и маска синего шума лежат в data/. Установленная Scrap
 # Mechanic нужна только самому приложению — чтобы подхватить шрифты, свежую
 # палитру и писать чертежи прямо в папку игры.
+#
+# Главное здесь — шаг «сверка JS с Python». Веб-версия считает то же самое на
+# JavaScript, и без общего эталона две реализации разъедутся после первой же
+# правки. Пусть падает сборка, а не пользователь.
 
 name: verify
 
@@ -24,8 +28,21 @@ jobs:
           python-version: '3.12'
           cache: pip
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
       - name: Поставить зависимости
         run: pip install -r requirements.txt
 
-      - name: Прогнать самопроверку
+      - name: Самопроверка Python
         run: python tools/verify.py
+
+      - name: Пересобрать данные для веба
+        run: python tools/build_web.py
+
+      - name: Не разъехались ли файлы веб-версии
+        run: git diff --exit-code -- web-static/data web-static/tests/vectors.json web-static/js/canvas.js
+
+      - name: Сверка JS с Python
+        run: node web-static/tests/node.mjs
