@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SM_Pixel — картинка в чертёж Scrap Mechanic</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header>
+  <h1>SM<b>_</b>PIXEL</h1>
+  <p class="sub">Картинка → чертёж Scrap Mechanic</p>
+  <div id="paths" class="paths"></div>
+</header>
+
+<main>
+<!-- ═══ ЛЕВАЯ КОЛОНКА ═══════════════════════════════════════════════════ -->
+<div class="panel">
+
+  <div id="drop" class="drop">
+    <input type="file" id="file" accept="image/*" hidden>
+    <b>Перетащите картинку</b>
+    <span>или нажмите, чтобы выбрать файл</span>
+    <small id="formats"></small>
+  </div>
+
+  <div id="controls" class="hidden">
+
+  <!-- ─ Источник ─────────────────────────────────────────────────────── -->
+  <section class="box" data-key="src">
+    <h2>Размер</h2>
+    <div class="body">
+      <label class="row"><span>Ширина, блоков</span>
+        <input type="range" id="width" min="8" max="1024" step="1" value="128">
+        <input type="number" id="widthNum" min="1" max="4096" value="128"></label>
+      <label class="row" id="heightRow"><span>Высота, блоков</span>
+        <input type="range" id="height" min="8" max="1024" step="1" value="128" disabled>
+        <input type="number" id="heightNum" min="1" max="4096" value="128" disabled></label>
+      <div class="btnrow">
+        <button type="button" class="ghost" id="one2one">1:1 пиксель в блок</button>
+        <span class="hint" id="oneHint" style="margin:0"></span>
+      </div>
+      <label class="check"><input type="checkbox" id="keepRatio" checked> Сохранять пропорции</label>
+      <label class="row"><span>Сжатие</span>
+        <select id="resample">
+          <option value="auto">Авто</option>
+          <option value="lanczos">Ланцош — плавно, для фото</option>
+          <option value="box">Усреднение — честный средний цвет</option>
+          <option value="nearest">Ближайший — для пиксель-арта</option>
+        </select></label>
+      <div class="btnrow">
+        <button type="button" class="ghost" id="cropBtn">Обрезать кадр</button>
+        <button type="button" class="ghost" id="cropReset">Весь кадр</button>
+        <span class="hint" id="cropInfo" style="margin:0"></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─ Цвет ─────────────────────────────────────────────────────────── -->
+  <section class="box" data-key="color">
+    <h2>Цвет</h2>
+    <div class="body">
+      <div class="seg" id="colorMode">
+        <button type="button" class="on" data-v="exact">Точный RGB</button>
+        <button type="button" data-v="palette">Палитра игры</button>
+      </div>
+      <p class="hint" id="colorHint"></p>
+
+      <div id="paletteBox" class="hidden">
+        <div class="seg small" id="preset" style="flex-wrap:wrap">
+          <button type="button" data-v="photo">Фото</button>
+          <button type="button" data-v="poster">Плакат</button>
+          <button type="button" data-v="pixel">Пиксель-арт</button>
+          <button type="button" data-v="max">Максимум точности</button>
+        </div>
+
+        <label class="row"><span>Смешение</span>
+          <select id="method"></select></label>
+        <label class="row"><span>Сила</span>
+          <input type="range" id="strength" min="0" max="1.5" step="0.05" value="1">
+          <output id="strengthOut">1.00</output></label>
+        <label class="row"><span>Вес яркости</span>
+          <input type="range" id="lumWeight" min="0.5" max="3" step="0.1" value="1.0">
+          <output id="lumWeightOut">1.0</output></label>
+        <p class="hint">Это <b>обмен, а не улучшение</b>. Замерено на живых скриншотах:
+          вес 1.8 снижает ошибку по светлоте на 11 %, но повышает ошибку по цвету
+          на 26 %. Поднимайте, если важнее сохранить свет и тень (лица, текст,
+          логотипы), оставьте 1.0 для общей точности.</p>
+        <label class="check"><input type="checkbox" id="serpentine" checked>
+          Змейкой <small>— убирает диагональные «червячки»</small></label>
+
+        <div class="btnrow">
+          <button type="button" class="ghost" id="autofitBtn">Подогнать под палитру</button>
+          <span class="hint" id="fitInfo" style="margin:0"></span>
+        </div>
+
+        <label class="check"><input type="checkbox" id="useBlocks">
+          Разные блоки как доп. цвета <small id="blocksNote"></small></label>
+        <div id="blocksBox" class="hidden">
+          <p class="hint">Текстура блока накладывается поверх краски и гасит её.
+            Это даёт приглушённые и тёмные тона, которых в палитре нет.
+            Модель снята с файлов игры — <b>приближение среднего вида</b>,
+            вблизи видна сама текстура.</p>
+          <div class="btnrow">
+            <button type="button" class="ghost" id="blocksAll">Все</button>
+            <button type="button" class="ghost" id="blocksNone">Никакие</button>
+            <button type="button" class="ghost" id="blocksFlat">Только ровные</button>
+          </div>
+          <div id="blockList" class="blocklist"></div>
+          <label class="row"><span>Слить близкие</span>
+            <input type="range" id="dedupe" min="0" max="0.05" step="0.002" value="0.012">
+            <output id="dedupeOut">0.012</output></label>
+        </div>
+
+        <div id="swatches" class="swatches"></div>
+        <p class="hint" id="paletteInfo"></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─ Постройка ────────────────────────────────────────────────────── -->
+  <section class="box closed" data-key="build">
+    <h2>Постройка</h2>
+    <div class="body">
+      <div class="seg" id="orientation">
+        <button type="button" class="on" data-v="vertical">Вертикально</button>
+        <button type="button" data-v="horizontal">На земле</button>
+      </div>
+      <label class="row"><span>Блок</span><select id="block"></select></label>
+      <label class="row"><span>Толщина</span>
+        <input type="range" id="depth" min="1" max="8" step="1" value="1">
+        <output id="depthOut">1</output></label>
+      <label class="check"><input type="checkbox" id="merge" checked>
+        Склеивать одинаковые блоки</label>
+      <label class="row" id="boundRow"><span>Макс. склейка</span>
+        <input type="range" id="maxBound" min="1" max="512" step="1" value="255">
+        <output id="maxBoundOut">255</output></label>
+    </div>
+  </section>
+
+  <!-- ─ Прозрачность ─────────────────────────────────────────────────── -->
+  <section class="box closed" data-key="alpha">
+    <h2>Прозрачность</h2>
+    <div class="body">
+      <div class="seg" id="alphaMode">
+        <button type="button" class="on" data-v="cutout">Вырезать</button>
+        <button type="button" data-v="flatten">Залить фоном</button>
+      </div>
+      <label class="row" id="alphaThRow"><span>Порог</span>
+        <input type="range" id="alphaThreshold" min="0" max="255" step="1" value="128">
+        <output id="alphaThresholdOut">128</output></label>
+      <label class="row hidden" id="bgRow"><span>Цвет фона</span>
+        <input type="color" id="background" value="#ffffff"></label>
+    </div>
+  </section>
+
+  <!-- ─ Коррекция ────────────────────────────────────────────────────── -->
+  <section class="box closed" data-key="adjust">
+    <h2>Коррекция</h2>
+    <div class="body">
+      <label class="row"><span>Яркость</span>
+        <input type="range" id="brightness" min="0.3" max="2" step="0.02" value="1"><output id="brightnessOut">1.00</output></label>
+      <label class="row"><span>Контраст</span>
+        <input type="range" id="contrast" min="0.3" max="2" step="0.02" value="1"><output id="contrastOut">1.00</output></label>
+      <label class="row"><span>Насыщенность</span>
+        <input type="range" id="saturation" min="0" max="2.5" step="0.02" value="1"><output id="saturationOut">1.00</output></label>
+      <label class="row"><span>Гамма</span>
+        <input type="range" id="gamma" min="0.4" max="2.2" step="0.02" value="1"><output id="gammaOut">1.00</output></label>
+      <div class="btnrow">
+        <button type="button" class="ghost" id="reset">Сбросить</button>
+        <label class="check" style="margin:0"><input type="checkbox" id="flipH"> Зеркально</label>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─ Модули ───────────────────────────────────────────────────────── -->
+  <section class="box" data-key="split">
+    <h2>Дробление на модули</h2>
+    <div class="body">
+      <div id="advice" class="advice">—</div>
+      <label class="check"><input type="checkbox" id="split"> Разбить на модули</label>
+      <div id="splitBox" class="hidden">
+        <div class="seg small" id="splitMode">
+          <button type="button" class="on" data-v="count">По числу модулей</button>
+          <button type="button" data-v="size">По размеру модуля</button>
+        </div>
+        <div id="byCount">
+          <label class="row"><span>Вариант</span><select id="splitPreset"></select></label>
+          <label class="row"><span>Вручную</span>
+            <span class="manual">
+              <input type="number" id="cols" min="1" max="4096" value="1"> ×
+              <input type="number" id="rows" min="1" max="4096" value="1">
+              <small>столбцов × рядов</small>
+            </span></label>
+        </div>
+        <div id="bySize" class="hidden">
+          <label class="row"><span>Модуль, блоков</span>
+            <span class="manual">
+              <input type="number" id="moduleW" min="1" max="4096" value="64"> ×
+              <input type="number" id="moduleH" min="1" max="4096" value="64">
+              <small>ш × в</small>
+            </span></label>
+        </div>
+        <label class="row"><span>Потолок модуля</span>
+          <input type="range" id="target" min="1000" max="30000" step="500" value="8000">
+          <output id="targetOut">8000</output></label>
+        <div class="btnrow">
+          <button type="button" class="ghost" id="edgesBtn">Двигать швы мышью</button>
+          <button type="button" class="ghost" id="edgesReset">Ровные швы</button>
+        </div>
+        <div id="moduleList" class="modules"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─ Экспорт ──────────────────────────────────────────────────────── -->
+  <section class="box" data-key="export">
+    <h2>Экспорт</h2>
+    <div class="body">
+      <label class="row"><span>Название</span>
+        <input type="text" id="name" maxlength="60" placeholder="Название чертежа"></label>
+      <label class="check"><input type="checkbox" id="toGame" checked> Положить сразу в игру</label>
+      <label class="check"><input type="checkbox" id="replace"> Заменить чертёж с таким же названием</label>
+      <label class="check"><input type="checkbox" id="toZip"> Скачать ZIP</label>
+      <label class="check hidden" id="onlyRow"><input type="checkbox" id="onlyModule">
+        Только выбранный модуль <b id="onlyName" style="color:var(--orange)"></b></label>
+      <button type="button" id="export" class="primary">Собрать чертёж</button>
+      <div id="exportResult" class="result"></div>
+      <div id="guide" class="guide hidden"></div>
+    </div>
+  </section>
+
+  </div>
+</div>
+
+<!-- ═══ ПРАВАЯ КОЛОНКА ══════════════════════════════════════════════════ -->
+<div class="stagewrap">
+  <div class="toolbar">
+    <button type="button" class="ghost on" data-tool="pan" title="Двигать и приближать">Рука</button>
+    <button type="button" class="ghost" data-tool="brush" title="Красить блоки">Кисть</button>
+    <button type="button" class="ghost" data-tool="erase" title="Стирать блоки">Ластик</button>
+    <button type="button" class="ghost" data-tool="pick" title="Взять цвет с картинки">Пипетка</button>
+    <button type="button" class="ghost" data-tool="module" title="Выбрать модуль">Модуль</button>
+    <span class="sep"></span>
+    <button type="button" class="ghost" id="zoomOut">−</button>
+    <span class="zoom" id="zoomLabel">100%</span>
+    <button type="button" class="ghost" id="zoomIn">+</button>
+    <button type="button" class="ghost" id="zoomFit">Вписать</button>
+    <button type="button" class="ghost" id="zoom1">1 блок = 1 px</button>
+    <span class="sep"></span>
+    <button type="button" class="ghost" id="showOriginal">Оригинал</button>
+    <button type="button" class="ghost" id="showRects">Границы деталей</button>
+    <span class="sep"></span>
+    <button type="button" class="ghost" id="undo" title="Отменить последний мазок">Отменить</button>
+    <button type="button" class="ghost" id="clearEdits">Сбросить правки</button>
+    <span class="zoom" id="brushSizeLabel">кисть 1</span>
+  </div>
+
+  <div id="stage" class="stage tool-pan">
+    <canvas id="canvas"></canvas>
+    <div class="empty" id="stageEmpty">Загрузите картинку слева</div>
+  </div>
+
+  <div id="stats" class="stats hidden">
+    <div><b id="stGrid">—</b><span>сетка</span></div>
+    <div><b id="stMeters">—</b><span>размер в игре</span></div>
+    <div><b id="stParts">—</b><span>деталей</span></div>
+    <div><b id="stSaved">—</b><span>склейка</span></div>
+    <div><b id="stColors">—</b><span>цветов</span></div>
+    <div class="hidden" id="stErrorBox"><b id="stError">—</b><span>ошибка издали</span></div>
+    <div class="hidden" id="stModulesBox"><b id="stModules">—</b><span>модулей</span></div>
+    <div class="hidden" id="stHeaviestBox"><b id="stHeaviest">—</b><span>в тяжёлом</span></div>
+    <div><b id="stMs">—</b><span>расчёт, мс</span></div>
+  </div>
+  <div id="warn" class="warn hidden"></div>
+  <div id="blocksUsed" class="hint"></div>
+</div>
+</main>
+
+<div id="toast" class="toast"></div>
+<script src="/static/canvas.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>

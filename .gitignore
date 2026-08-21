@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Временные файлы конвертера
+*.tmp
+_test.*
+web/static/_test.png
+
+# Среды разработки
+.vscode/
+.idea/
+*.code-workspace
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# ВАЖНО: data/ не игнорируем — там materials.json и bluenoise.npy,
+# без них конвертер теряет расширенную палитру и синий шум.

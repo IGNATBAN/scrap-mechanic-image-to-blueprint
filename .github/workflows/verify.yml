@@ -1,0 +1,31 @@
+# Самопроверка на каждый коммит.
+#
+# Игра для неё не нужна: палитра краскопульта и каталог блоков зашиты в код,
+# таблица материалов и маска синего шума лежат в data/. Установленная Scrap
+# Mechanic нужна только самому приложению — чтобы подхватить шрифты, свежую
+# палитру и писать чертежи прямо в папку игры.
+
+name: verify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Поставить зависимости
+        run: pip install -r requirements.txt
+
+      - name: Прогнать самопроверку
+        run: python tools/verify.py

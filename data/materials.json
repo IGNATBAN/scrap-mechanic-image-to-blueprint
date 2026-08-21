@@ -1,0 +1,522 @@
+{
+ "model": "final_linear = paint_linear * (1 - alpha) + tint",
+ "blocks": {
+  "a6c6ce30-dd47-4587-b475-085d55c6a3b4": {
+   "name": "blk_concrete1",
+   "alpha": 0.06411,
+   "tint": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "tiling": 8,
+   "glass": false
+  },
+  "df953d9c-234f-4ac2-af5e-f0490b223e71": {
+   "name": "blk_wood1",
+   "alpha": 0.15534,
+   "tint": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "tiling": 8,
+   "glass": false
+  },
+  "8aedf6c2-94e1-4506-89d4-a0227c552f1e": {
+   "name": "blk_metal1",
+   "alpha": 0.04916,
+   "tint": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "tiling": 8,
+   "glass": false
+  },
+  "09ca2713-28ee-4119-9622-e85490034758": {
+   "name": "blk_caution",
+   "alpha": 0.54696,
+   "tint": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "tiling": 8,
+   "glass": false
+  },
+  "8ca49bff-eeef-4b43-abd0-b527a567f1b7": {
+   "name": "blk_tiles",
+   "alpha": 0.15734,
+   "tint": [
+    0.02842,
+    0.02842,
+    0.02842
+   ],
+   "tiling": 4,
+   "glass": false
+  },
+  "0603b36e-0bdb-4828-b90c-ff19abcdfe34": {
+   "name": "blk_bricks",
+   "alpha": 0.08651,
+   "tint": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "tiling": 8,
+   "glass": false
+  },
+  "5f41af56-df4c-4837-9b3c-10781335757f": {
+   "name": "blk_glass",
+   "alpha": 0.0,
+   "tint": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "tiling": 8,
+   "glass": true
+  },
+  "749f69e0-56c9-488c-adf6-66c58531818f": {
+   "name": "blk_glasstile",
+   "alpha": 0.01688,
+   "tint": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "tiling": 8,
+   "glass": true
+  },
+  "073f92af-f37e-4aff-96b3-d66284d5081c": {
+   "name": "blk_lights",
+   "alpha": 0.22006,
+   "tint": [
+    0.02693,
+    0.02641,
+    0.01696
+   ],
+   "tiling": 2,
+   "glass": false
+  },
+  "027bd4ec-b16d-47d2-8756-e18dc2af3eb6": {
+   "name": "blk_spaceshipmetal",
+   "alpha": 0.05698,
+   "tint": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "tiling": 4,
+   "glass": false
+  },
+  "f0cba95b-2dc4-4492-8fd9-36546a4cb5aa": {
+   "name": "blk_cardboard",
+   "alpha": 0.12971,
+   "tint": [
+    0.01789,
+    0.01206,
+    0.00467
+   ],
+   "tiling": 16,
+   "glass": false
+  },
+  "1fc74a28-addb-451a-878d-c3c605d63811": {
+   "name": "blk_scrapwood",
+   "alpha": 0.25914,
+   "tint": [
+    0.00997,
+    0.00635,
+    0.0047
+   ],
+   "tiling": 8,
+   "glass": false
+  },
+  "1897ee42-0291-43e4-9645-8c5a5d310398": {
+   "name": "blk_wood2",
+   "alpha": 0.3547,
+   "tint": [
+    0.01076,
+    0.01434,
+    0.0175
+   ],
+   "tiling": 8,
+   "glass": false
+  },
+  "061b5d4b-0a6a-4212-b0ae-9e9681f1cbfb": {
+   "name": "blk_wood3",
+   "alpha": 0.42393,
+   "tint": [
+    0.00214,
+    0.01192,
+    0.02543
+   ],
+   "tiling": 8,
+   "glass": false
+  },
+  "1f7ac0bb-ad45-4246-9817-59bdf7f7ab39": {
+   "name": "blk_scrapmetal",
+   "alpha": 0.39865,
+   "tint": [
+    0.07658,
+    0.04639,
+    0.02852
+   ],
+   "tiling": 16,
+   "glass": false
+  },
+  "1016cafc-9f6b-40c9-8713-9019d399783f": {
+   "name": "blk_metal2",
+   "alpha": 0.56611,
+   "tint": [
+    0.03118,
+    0.03716,
+    0.04391
+   ],
+   "tiling": 8,
+   "glass": false
+  },
+  "c0dfdea5-a39d-433a-b94a-299345a5df46": {
+   "name": "blk_metal3",
+   "alpha": 0.50281,
+   "tint": [
+    0.00071,
+    0.0095,
+    0.02125
+   ],
+   "tiling": 8,
+   "glass": false
+  },
+  "30a2288b-e88e-4a92-a916-1edbfc2b2dac": {
+   "name": "blk_scrapstone",
+   "alpha": 0.18681,
+   "tint": [
+    6e-05,
+    6e-05,
+    6e-05
+   ],
+   "tiling": 8,
+   "glass": false
+  },
+  "ff234e42-5da4-43cc-8893-940547c97882": {
+   "name": "blk_concrete2",
+   "alpha": 0.48146,
+   "tint": [
+    0.01921,
+    0.0233,
+    0.02745
+   ],
+   "tiling": 8,
+   "glass": false
+  },
+  "e281599c-2343-4c86-886e-b2c1444e8810": {
+   "name": "blk_concrete3",
+   "alpha": 0.48172,
+   "tint": [
+    0.00096,
+    0.01011,
+    0.0189
+   ],
+   "tiling": 8,
+   "glass": false
+  },
+  "f5ceb7e3-5576-41d2-82d2-29860cf6e20e": {
+   "name": "blk_crackedconcrete",
+   "alpha": 0.1429,
+   "tint": [
+    0.00591,
+    0.00536,
+    0.00496
+   ],
+   "tiling": 8,
+   "glass": false
+  },
+  "cd0eff89-b693-40ee-bd4c-3500b23df44e": {
+   "name": "blk_concretetiles",
+   "alpha": 0.17564,
+   "tint": [
+    0.00028,
+    0.00043,
+    0.00072
+   ],
+   "tiling": 16,
+   "glass": false
+  },
+  "220b201e-aa40-4995-96c8-e6007af160de": {
+   "name": "blk_metalbricks",
+   "alpha": 0.06667,
+   "tint": [
+    0.00323,
+    0.00116,
+    0.00096
+   ],
+   "tiling": 8,
+   "glass": false
+  },
+  "25a5ffe7-11b1-4d3e-8d7a-48129cbaf05e": {
+   "name": "blk_beam",
+   "alpha": 0.19057,
+   "tint": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "tiling": 8,
+   "glass": false
+  },
+  "f406bf6e-9fd5-4aa0-97c1-0b3c2118198e": {
+   "name": "blk_bubblewrap",
+   "alpha": 0.11532,
+   "tint": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "tiling": 2,
+   "glass": false
+  },
+  "628b2d61-5ceb-43e9-8334-a4135566df7a": {
+   "name": "blk_plastic",
+   "alpha": 0.0524,
+   "tint": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "tiling": 4,
+   "glass": false
+  },
+  "9be6047c-3d44-44db-b4b9-9bcf8a9aab20": {
+   "name": "blk_insulation",
+   "alpha": 0.4195,
+   "tint": [
+    0.07567,
+    0.04717,
+    0.04732
+   ],
+   "tiling": 8,
+   "glass": false
+  },
+  "b145d9ae-4966-4af6-9497-8fca33f9aee3": {
+   "name": "blk_drywall",
+   "alpha": 0.23636,
+   "tint": [
+    0.18073,
+    0.18541,
+    0.18847
+   ],
+   "tiling": 8,
+   "glass": false
+  },
+  "febce8a6-6c05-4e5d-803b-dfa930286944": {
+   "name": "blk_carpet",
+   "alpha": 0.10346,
+   "tint": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "tiling": 4,
+   "glass": false
+  },
+  "e981c337-1c8a-449c-8602-1dd990cbba3a": {
+   "name": "blk_plasticwall",
+   "alpha": 0.20143,
+   "tint": [
+    0.04467,
+    0.04699,
+    0.04891
+   ],
+   "tiling": 8,
+   "glass": false
+  },
+  "4aa2a6f0-65a4-42e3-bf96-7dec62570e0b": {
+   "name": "blk_metalnet",
+   "alpha": 0.27964,
+   "tint": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "tiling": 1,
+   "glass": false
+  },
+  "3d0b7a6e-5b40-474c-bbaf-efaa54890e6a": {
+   "name": "blk_crossnet",
+   "alpha": 0.20363,
+   "tint": [
+    0.01476,
+    0.01476,
+    0.01476
+   ],
+   "tiling": 1,
+   "glass": false
+  },
+  "ea6864db-bb4f-4a89-b9ec-977849b6713a": {
+   "name": "blk_tryponet",
+   "alpha": 0.0,
+   "tint": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "tiling": 1,
+   "glass": false
+  },
+  "a479066d-4b03-46b5-8437-e99fec3f43ee": {
+   "name": "blk_stripednet",
+   "alpha": 0.07059,
+   "tint": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "tiling": 8,
+   "glass": false
+  },
+  "b4fa180c-2111-4339-b6fd-aed900b57093": {
+   "name": "blk_squarenet",
+   "alpha": 0.09463,
+   "tint": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "tiling": 1,
+   "glass": false
+  },
+  "920b40c8-6dfc-42e7-84e1-d7e7e73128f6": {
+   "name": "blk_restroom",
+   "alpha": 0.15822,
+   "tint": [
+    0.00992,
+    0.00964,
+    0.00782
+   ],
+   "tiling": 8,
+   "glass": false
+  },
+  "f7d4bfed-1093-49b9-be32-394c872a1ef4": {
+   "name": "blk_treadplate",
+   "alpha": 0.08088,
+   "tint": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "tiling": 4,
+   "glass": false
+  },
+  "3e3242e4-1791-4f70-8d1d-0ae9ba3ee94c": {
+   "name": "blk_warehousefloor",
+   "alpha": 0.27641,
+   "tint": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "tiling": 4,
+   "glass": false
+  },
+  "d740a27d-cc0f-4866-9e07-6a5c516ad719": {
+   "name": "blk_wornmetal",
+   "alpha": 0.16606,
+   "tint": [
+    0.00971,
+    0.00675,
+    0.00593
+   ],
+   "tiling": 8,
+   "glass": false
+  },
+  "4ad97d49-c8a5-47f3-ace3-d56ba3affe50": {
+   "name": "blk_spaceshipfloor",
+   "alpha": 1.0,
+   "tint": [
+    0.21486,
+    0.22074,
+    0.25526
+   ],
+   "tiling": 8,
+   "glass": false
+  },
+  "c56700d9-bbe5-4b17-95ed-cef05bd8be1b": {
+   "name": "blk_sand",
+   "alpha": 0.11687,
+   "tint": [
+    0.02921,
+    0.01756,
+    0.00465
+   ],
+   "tiling": 8,
+   "glass": false
+  },
+  "b5ee5539-75a2-4fef-873b-ef7c9398b3f5": {
+   "name": "blk_armoredglass",
+   "alpha": 0.16418,
+   "tint": [
+    0.09873,
+    0.09873,
+    0.09873
+   ],
+   "tiling": 4,
+   "glass": true
+  },
+  "5721f7ad-a9b2-4fc5-a264-c2c98fa464bc": {
+   "name": "blk_crystal",
+   "alpha": 0.41176,
+   "tint": [
+    0.08888,
+    0.08888,
+    0.08888
+   ],
+   "tiling": 4,
+   "glass": true
+  },
+  "099bbf9a-6766-4e39-bd12-90d8b81771af": {
+   "name": "blk_ice",
+   "alpha": 0.03871,
+   "tint": [
+    0.03871,
+    0.03871,
+    0.03871
+   ],
+   "tiling": 8,
+   "glass": false
+  },
+  "4ae689b2-b785-4cb9-94e6-6bbe10adf926": {
+   "name": "blk_fancycarpet",
+   "alpha": 1.0,
+   "tint": [
+    0.03061,
+    0.08058,
+    0.16783
+   ],
+   "tiling": 8,
+   "glass": false
+  },
+  "d8766548-a54d-436b-b086-c6b546a01b3b": {
+   "name": "blk_dekotora01",
+   "alpha": 1.0,
+   "tint": [
+    0.36739,
+    0.4085,
+    0.34294
+   ],
+   "tiling": 32,
+   "glass": false
+  },
+  "7ef4d993-07d1-487a-ba12-ce9d82093f38": {
+   "name": "blk_placeholderblock_sticky",
+   "alpha": 0.15822,
+   "tint": [
+    0.00992,
+    0.00964,
+    0.00782
+   ],
+   "tiling": 8,
+   "glass": false
+  }
+ }
+}
