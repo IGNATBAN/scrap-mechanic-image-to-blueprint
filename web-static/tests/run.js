@@ -10,6 +10,7 @@ import { Palette, quantize, setBlueNoise } from '../js/quant.js';
 import { mergeRects, colorKeys } from '../js/mesh.js';
 import * as tiles from '../js/tiles.js';
 import * as bp from '../js/blueprint.js';
+import * as img from '../js/imageproc.js';
 
 /** sha256 первых 16 знаков — тот же приём, что в Python. */
 async function digest(bytes) {
@@ -147,6 +148,42 @@ export async function runTests({ vectors, materials, bluenoise }) {
     }
   }
   ok('текст чертежа бит в бит', !badBp.length, badBp.join('; '));
+
+  // ── масштабирование и коррекция ───────────────────────────────────────
+  if (v.resize) {
+    const sw = v.resizeSource.width, sh = v.resizeSource.height;
+    const srcRgb = b64ToBytes(v.resizeSource.rgb);
+    const badResize = [];
+    for (const [name, exp] of Object.entries(v.resize)) {
+      const [fname, size] = name.split('@');
+      const [ow, oh] = size.split('x').map(Number);
+      const got = img.resize(srcRgb, sw, sh, ow, oh, fname);
+      if (await digest(got) !== exp.hash) {
+        badResize.push(`${name} (первые ${[...got.slice(0, 4)]} вместо ${exp.first[0]})`);
+      }
+    }
+    ok('масштабирование как в Pillow', !badResize.length,
+      badResize.length ? badResize.slice(0, 3).join('; ') : `${Object.keys(v.resize).length} вариантов`);
+  }
+
+  if (v.adjust) {
+    const aw = v.adjustSource.width, ah = v.adjustSource.height;
+    const aRgb = b64ToBytes(v.adjustSource.rgb);
+    const params = {
+      'gamma0.8': { gamma: 0.8 },
+      'bright1.3': { brightness: 1.3 },
+      'contrast1.4': { contrast: 1.4 },
+      'sat0.5': { saturation: 0.5 },
+      all: { brightness: 1.15, contrast: 1.25, saturation: 1.4, gamma: 0.9 },
+    };
+    const badAdjust = [];
+    for (const [name, exp] of Object.entries(v.adjust)) {
+      const got = img.adjust(aRgb, aw * ah, params[name]);
+      if (await digest(got) !== exp.hash) badAdjust.push(name);
+    }
+    ok('коррекция как в Pillow', !badAdjust.length,
+      badAdjust.length ? badAdjust.join(', ') : `${Object.keys(v.adjust).length} вариантов`);
+  }
 
   const desc = bp.descriptionJson('Тест', '11111111-2222-3333-4444-555555555555', 'заметка');
   ok('description.json совпадает', await digest(enc.encode(desc)) === v.description.sha256,

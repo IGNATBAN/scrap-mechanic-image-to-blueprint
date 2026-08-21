@@ -160,6 +160,52 @@ def main() -> int:
     desc = blueprint.description_json("Тест", "11111111-2222-3333-4444-555555555555", "заметка")
     vectors["description"] = {"sha256": hashlib.sha256(desc.encode()).hexdigest()[:16], "text": desc}
 
+    # 8. Масштабирование и коррекция — здесь Pillow и браузер расходятся легче
+    #    всего, поэтому фиксируем и их. Источник отдельный: важно, чтобы
+    #    размеры не делились нацело, иначе половина фильтров совпадёт случайно.
+    from PIL import Image, ImageEnhance
+
+    rng2 = np.random.default_rng(777)
+    src = rng2.integers(0, 256, (23, 37, 3), dtype=np.uint8)
+    src[5:9, 3:20] = (255, 40, 0)
+    vectors["resizeSource"] = {"width": 37, "height": 23,
+                               "rgb": base64.b64encode(src.tobytes()).decode()}
+    vectors["resize"] = {}
+    filters = {"nearest": Image.Resampling.NEAREST, "box": Image.Resampling.BOX,
+               "bilinear": Image.Resampling.BILINEAR, "lanczos": Image.Resampling.LANCZOS}
+    img_src = Image.fromarray(src, "RGB")
+    for fname, f in filters.items():
+        for size in ((12, 8), (60, 40), (37, 23), (19, 5)):
+            out = np.array(img_src.resize(size, f), dtype=np.uint8)
+            vectors["resize"][f"{fname}@{size[0]}x{size[1]}"] = {
+                "hash": digest(out), "first": out[0, :4].tolist(),
+            }
+
+    vectors["adjust"] = {}
+    small = Image.fromarray(src[:8, :12], "RGB")
+    for label, (b, c, s, g) in {
+        "gamma0.8": (1.0, 1.0, 1.0, 0.8),
+        "bright1.3": (1.3, 1.0, 1.0, 1.0),
+        "contrast1.4": (1.0, 1.4, 1.0, 1.0),
+        "sat0.5": (1.0, 1.0, 0.5, 1.0),
+        "all": (1.15, 1.25, 1.4, 0.9),
+    }.items():
+        arr = np.array(small, dtype=np.uint8)
+        if g != 1.0:
+            lut = np.clip(((np.arange(256) / 255.0) ** (1.0 / g)) * 255.0, 0, 255).astype(np.uint8)
+            arr = lut[arr]
+        im = Image.fromarray(arr, "RGB")
+        if b != 1.0:
+            im = ImageEnhance.Brightness(im).enhance(b)
+        if c != 1.0:
+            im = ImageEnhance.Contrast(im).enhance(c)
+        if s != 1.0:
+            im = ImageEnhance.Color(im).enhance(s)
+        got = np.array(im, dtype=np.uint8)
+        vectors["adjust"][label] = {"hash": digest(got), "first": got[0, :4].tolist()}
+    vectors["adjustSource"] = {"width": 12, "height": 8,
+                               "rgb": base64.b64encode(np.ascontiguousarray(src[:8, :12]).tobytes()).decode()}
+
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     with open(OUT, "w", encoding="utf-8") as fh:
         json.dump(vectors, fh, ensure_ascii=False, indent=1)
@@ -170,6 +216,8 @@ def main() -> int:
     print(f"  склейка:     {len(vectors['mesh'])} вариантов")
     print(f"  дробление:   {len(vectors['tiles'])} раскладок")
     print(f"  чертёж:      {len(vectors['blueprint'])} вариантов")
+    print(f"  масштаб:     {len(vectors['resize'])} вариантов")
+    print(f"  коррекция:   {len(vectors['adjust'])} вариантов")
     return 0
 
 
