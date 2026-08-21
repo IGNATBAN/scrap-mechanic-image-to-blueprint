@@ -68,6 +68,100 @@ def case_merge(name: str, rgb: np.ndarray, mask: np.ndarray, max_bound: int = 25
     )
 
 
+def check_vectors() -> None:
+    """Сверить Python с эталонными векторами (их же проверяет веб-версия).
+
+    Векторы связывают две реализации: если правка меняет результат, здесь
+    станет красно раньше, чем пользователь увидит разницу между сайтом и
+    программой. Пересоздать осознанно: py tools/make_vectors.py
+    """
+    import base64
+    import hashlib
+
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    path = os.path.join(root, "tests", "vectors.json")
+    if not os.path.isfile(path):
+        check("эталонные векторы на месте", False, "нет tests/vectors.json — см. tools/make_vectors.py")
+        return
+    with open(path, encoding="utf-8") as fh:
+        v = json.load(fh)
+
+    from core import materials, palette, quant, tiles
+
+    def dig(arr):
+        return hashlib.sha256(np.ascontiguousarray(arr).tobytes()).hexdigest()[:16]
+
+    w, h = v["image"]["width"], v["image"]["height"]
+    img = np.frombuffer(base64.b64decode(v["image"]["rgb"]), dtype=np.uint8).reshape(h, w, 3)
+    bits = np.unpackbits(np.frombuffer(base64.b64decode(v["image"]["mask"]), dtype=np.uint8))
+    mask = bits[: h * w].astype(bool).reshape(h, w)
+
+    check("палитра не изменилась", list(palette.PALETTE_HEX) == v["paletteHex"])
+
+    lab = quant.to_oklab(np.array(v["oklab"]["rgb"], dtype=np.uint8).reshape(1, -1, 3))[0]
+    ok = all(abs(a - b) < 1e-5 for row, exp in zip(lab, v["oklab"]["lab"]) for a, b in zip(row, exp))
+    check("OKLab совпадает с эталоном", ok)
+
+    over = materials.load()
+    bad = [u for u, e in v["materials"].items()
+           if u not in over or abs(over[u].alpha - e["alpha"]) > 1e-4]
+    check("таблица материалов не изменилась", not bad, bad[:2])
+
+    base_pal = materials.build_palette(v["paletteHex"], blocks.DEFAULT_BLOCK)
+    wide_pal = materials.build_palette(v["paletteHex"], blocks.DEFAULT_BLOCK, v["extraBlocks"])
+    check("набор из одной краски", dig(base_pal.rgb) == v["palettes"]["base"]["rgbHash"],
+          "%d против %d" % (len(base_pal), v["palettes"]["base"]["size"]))
+    check("набор с блоками", dig(wide_pal.rgb) == v["palettes"]["wide"]["rgbHash"],
+          "%d против %d" % (len(wide_pal), v["palettes"]["wide"]["size"]))
+
+    wrong = []
+    for name, exp in v["quantize"].items():
+        method, lw = name.split("@")
+        keys = quant.quantize(img, base_pal, method, strength=1.0, lum_weight=float(lw),
+                              serpentine=True, mask=mask)
+        if dig(keys.astype(np.int32)) != exp["hash"]:
+            wrong.append(name)
+    check("квантование совпадает во всех режимах", not wrong, wrong[:4])
+
+    packed = (img[..., 0].astype(np.int32) << 16) | (img[..., 1].astype(np.int32) << 8) | img[..., 2]
+    pal_keys = quant.quantize(img, base_pal, "none", mask=mask).astype(np.int32)
+    wrong = []
+    for name, exp in v["mesh"].items():
+        src, bound = name.split("@")
+        rects = mesh.merge_rects(packed if src == "packed" else pal_keys, mask, int(bound))
+        flat = np.array([[r[0], r[1], r[2], r[3], r[4]] for r in rects], dtype=np.int64)
+        if len(rects) != exp["count"] or dig(flat) != exp["hash"]:
+            wrong.append(name)
+    check("склейка совпадает", not wrong, wrong[:4])
+
+    rects = mesh.merge_rects(pal_keys, mask, 255)
+    wrong = []
+    for name, exp in v["tiles"].items():
+        cols, rows = (int(x) for x in name.split("x"))
+        cut = tiles.cut(rects, w, h, cols, rows)
+        got = [t.parts for t in sorted(cut, key=lambda t: t.order)]
+        if got != exp["parts"]:
+            wrong.append(name)
+    check("дробление совпадает", not wrong, wrong[:3])
+
+    plan = tiles.plan(rects, w, h, target=40)
+    check("рекомендация дробления совпадает", plan["recommended"] == v["plan"]["recommended"],
+          "%s против %s" % (plan["recommended"], v["plan"]["recommended"]))
+
+    wrong = []
+    for name, exp in v["blueprint"].items():
+        orient, depth = name.split("@")
+        text = blueprint.build_json(rects, w, h, blueprint.rgb_resolver(blocks.DEFAULT_BLOCK),
+                                    orient, True, int(depth))
+        if hashlib.sha256(text.encode()).hexdigest()[:16] != exp["sha256"]:
+            wrong.append(name)
+    check("текст чертежа совпадает бит в бит", not wrong, wrong[:3])
+
+    desc = blueprint.description_json("Тест", "11111111-2222-3333-4444-555555555555", "заметка")
+    check("description.json совпадает",
+          hashlib.sha256(desc.encode()).hexdigest()[:16] == v["description"]["sha256"])
+
+
 def main() -> int:
     print("\n=== палитра ===")
     check("40 цветов, все hex", len(palette.PALETTE_HEX) >= 8 and all(len(c) == 6 for c in palette.PALETTE_HEX),
@@ -397,6 +491,10 @@ def main() -> int:
     check("план предлагает крупное дробление", rec_h["cols"] * rec_h["rows"] > 30, rec_h)
     check("список вариантов не разрастается",
           len(huge_plan["options"]) <= tiles.LIST_LIMIT, len(huge_plan["options"]))
+
+    print("")
+    print("=== эталонные векторы (общие с веб-версией) ===")
+    check_vectors()
 
     print("\n=== каталог блоков ===")
     cat = blocks.catalog()

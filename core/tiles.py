@@ -228,22 +228,11 @@ def plan(
     arrays = _as_arrays(rects)
     best_by_count: dict[int, dict] = {}
 
-    # Каждый вариант стоит один проход по всем деталям. На миллионах деталей
-    # полный список вариантов считался бы полминуты, поэтому чем тяжелее
-    # картинка, тем короче список — рекомендация от этого не страдает,
-    # страдает только длина выпадающего меню.
-    budget = max(6, min(48, int(48 * 200_000 / max(1, len(rects)))))
-    candidates = sorted(_candidates(len(rects), grid_w, grid_h, target),
-                        key=lambda cr: cr[0] * cr[1])
-    if len(candidates) > budget:
-        step = len(candidates) / budget
-        keep = {candidates[min(len(candidates) - 1, int(i * step))] for i in range(budget)}
-        need = -(-len(rects) // max(1, target)) if target else 1
-        keep.add(_square_layout(need, grid_w, grid_h))
-        keep.add((1, 1))
-        candidates = sorted(keep, key=lambda cr: cr[0] * cr[1])
-
-    for cols, rows in candidates:
+    # Прореживать надо ПОСЛЕ выбора лучшей формы, а не до. Раньше список
+    # резался сразу, и из пары 3x1 / 1x3 мог остаться именно вытянутый
+    # вариант — рекомендация становилась хуже без всякой причины. Сам выбор
+    # формы стоит копейки (арифметика), дорог только count() по деталям.
+    for cols, rows in sorted(_candidates(len(rects), grid_w, grid_h, target)):
         modules = cols * rows
         if modules > max_modules or cols > max_side or rows > max_side:
             continue
@@ -255,8 +244,23 @@ def plan(
             continue
         best_by_count[modules] = {"cols": cols, "rows": rows, "_skew": skew}
 
+    # Каждый вариант стоит один проход по всем деталям. На миллионах деталей
+    # полный список считался бы полминуты, поэтому чем тяжелее картинка, тем
+    # короче список. Рекомендация от этого не страдает: нужное число модулей
+    # добавляется в набор принудительно.
+    module_counts = sorted(best_by_count)
+    budget = max(6, min(48, int(48 * 200_000 / max(1, len(rects)))))
+    if len(module_counts) > budget:
+        step = len(module_counts) / budget
+        keep = {module_counts[min(len(module_counts) - 1, int(i * step))] for i in range(budget)}
+        keep.add(module_counts[0])
+        if target:
+            need = -(-len(rects) // max(1, target))
+            keep.add(min(module_counts, key=lambda m: abs(m - need)))
+        module_counts = sorted(keep)
+
     options = []
-    for modules in sorted(best_by_count):
+    for modules in module_counts:
         cand = best_by_count[modules]
         counts, total = count(rects, grid_w, grid_h, cand["cols"], cand["rows"], arrays)
         ex, ey = edges(grid_w, cand["cols"]), edges(grid_h, cand["rows"])

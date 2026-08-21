@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>SM_Pixel — сверка JS с Python</title>
+<style>
+  body { background:#101010; color:#f8f8f8; font:14px/1.5 "Segoe UI",sans-serif; padding:24px; }
+  h1 { font-size:18px; letter-spacing:3px; text-transform:uppercase; color:#f8a808; }
+  p.lead { color:#9a9a9a; max-width:60em; }
+  table { border-collapse:collapse; margin-top:14px; }
+  td { padding:4px 12px 4px 0; vertical-align:top; }
+  .ok { color:#19e753; }
+  .fail { color:#d02525; font-weight:600; }
+  .extra { color:#9a9a9a; font-size:12.5px; }
+  #summary { margin-top:16px; font-size:16px; }
+</style>
+</head>
+<body>
+<h1>Сверка JS-ядра с эталоном Python</h1>
+<p class="lead">Эталон — <code>tests/vectors.json</code>, его же проверяет
+<code>tools/verify.py</code>. Если хоть одна строка красная, значит веб-версия
+и скачиваемая программа дадут разный результат.</p>
+<div id="out">Считаю…</div>
+<div id="summary"></div>
+
+<script type="module">
+import { runTests } from './run.js';
+
+const load = async (p) => (await fetch(p)).json();
+
+try {
+  const [vectors, materials, bluenoise] = await Promise.all([
+    load('vectors.json'), load('../data/materials.json'), load('../data/bluenoise.json'),
+  ]);
+  const t0 = performance.now();
+  const results = await runTests({ vectors, materials, bluenoise });
+  const ms = Math.round(performance.now() - t0);
+
+  document.getElementById('out').innerHTML = '<table>' + results.map((r) =>
+    `<tr><td class="${r.pass ? 'ok' : 'fail'}">${r.pass ? 'OK' : 'ПРОВАЛ'}</td>`
+    + `<td>${r.name}</td><td class="extra">${r.extra}</td></tr>`).join('') + '</table>';
+
+  const failed = results.filter((r) => !r.pass);
+  const s = document.getElementById('summary');
+  s.className = failed.length ? 'fail' : 'ok';
+  s.textContent = failed.length
+    ? `ПРОВАЛЕНО ${failed.length} из ${results.length}`
+    : `ВСЁ ЗЕЛЁНОЕ — ${results.length} проверок за ${ms} мс`;
+  window.__results = results;
+} catch (err) {
+  document.getElementById('out').innerHTML = `<span class="fail">Ошибка: ${err.message}</span>`;
+  window.__results = [{ name: 'запуск', pass: false, extra: err.message }];
+}
+</script>
+</body>
+</html>
