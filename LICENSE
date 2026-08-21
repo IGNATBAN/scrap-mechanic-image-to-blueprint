@@ -19,10 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
----
-
-Scrap Mechanic is a trademark of Axolot Games. This project is an unofficial
-fan tool, not affiliated with or endorsed by Axolot Games. It ships no game
-assets: fonts, the paint palette and block textures are read from the user's
-own installed copy of the game at runtime.
