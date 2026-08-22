@@ -14,6 +14,20 @@ export const VERTICAL = 'vertical';
 export const HORIZONTAL = 'horizontal';
 
 /** Ключ = упакованный цвет 0xRRGGBB, блок один на всю постройку. */
+/**
+ * Сдвиг картинки в локальных координатах чертежа: [по горизонтали, по вертикали].
+ * От него зависит, какая ячейка текстуры ляжет на какую клетку: развёртка
+ * в игре считается от локальных координат блока (проверено снимком).
+ * Клетка (x, y) картинки оказывается в локальных
+ *     (x + ox,  gridH - 1 - y + oz).
+ * Обе формулы обязаны совпадать с buildJson ниже.
+ */
+export function originOf(gridW, gridH, orientation = VERTICAL, center = true) {
+  const ox = center ? -Math.floor(gridW / 2) : 0;
+  const oz = orientation === HORIZONTAL ? (center ? -Math.floor(gridH / 2) : 0) : 0;
+  return [ox, oz];
+}
+
 export function rgbResolver(shapeId) {
   return (key) => [((key >>> 0) & 0xffffff).toString(16).toUpperCase().padStart(6, '0'), shapeId];
 }

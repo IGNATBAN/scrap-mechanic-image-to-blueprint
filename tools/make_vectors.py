@@ -97,6 +97,18 @@ def main() -> int:
         for uuid in EXTRA_BLOCKS if uuid in over
     }
 
+    # 2б. Узор: таблица ячеек блока. Развёртка в игре идёт по телу постройки,
+    # поэтому у блока не один оттенок, а tiling x tiling.
+    vectors["cells"] = {
+        uuid: {"n": over[uuid].n,
+               "span": round(over[uuid].span, 3),
+               "hash": digest(np.round(over[uuid].cells * 1e5).astype(np.int64)),
+               "corner": [round(float(v), 5) for v in over[uuid].cells[0, 0]],
+               "onOrange": materials.apply_cells(
+                   np.array([[223, 127, 0]], np.uint8), over[uuid])[:, :, 0, :].reshape(-1, 3)[:6].tolist()}
+        for uuid in EXTRA_BLOCKS if uuid in over and over[uuid].cells is not None
+    }
+
     # 3. Наборы материалов
     base_pal = materials.build_palette(palette.PALETTE_HEX, blocks.DEFAULT_BLOCK)
     wide_pal = materials.build_palette(palette.PALETTE_HEX, blocks.DEFAULT_BLOCK, EXTRA_BLOCKS)
@@ -117,6 +129,28 @@ def main() -> int:
                 "unique": int(len(np.unique(keys[mask]))),
                 "first": keys[0, :8].tolist(),
             }
+
+    # 4б. Квантование с учётом узора и ненулевого начала координат.
+    # Фаза берётся из локальных координат чертежа — сдвиг обязан совпадать
+    # с веб-версией, иначе узор разъедется.
+    vectors["quantizePattern"] = {}
+    for origin in ((0, 0), (-12, 0), (5, 3)):
+        for method in ("none", "fs", "bluenoise"):
+            keys = quant.quantize(img, wide_pal, method, strength=1.0, lum_weight=1.0,
+                                  serpentine=True, mask=mask, origin=origin)
+            vectors["quantizePattern"][f"{method}@{origin[0]},{origin[1]}"] = {
+                "hash": digest(keys.astype(np.int32)),
+                "unique": int(len(np.unique(keys[mask]))),
+                "first": keys[0, :8].tolist(),
+                "shownHash": digest(wide_pal.shown(keys, origin)),
+            }
+    vectors["remap"] = {
+        "period": wide_pal.period,
+        "size": len(wide_pal),
+        "hash": digest(wide_pal.remap(1.0)),
+        "row0": wide_pal.remap(1.0)[0, 0, :12].tolist(),
+        "cellsHash": digest(wide_pal.cells),
+    }
 
     # 5. Склейка
     vectors["mesh"] = {}
@@ -213,6 +247,7 @@ def main() -> int:
     size = os.path.getsize(OUT)
     print(f"Записано {OUT} — {size} байт")
     print(f"  квантование: {len(vectors['quantize'])} вариантов")
+    print(f"  узор:        {len(vectors['cells'])} блоков, {len(vectors['quantizePattern'])} прогонов")
     print(f"  склейка:     {len(vectors['mesh'])} вариантов")
     print(f"  дробление:   {len(vectors['tiles'])} раскладок")
     print(f"  чертёж:      {len(vectors['blueprint'])} вариантов")

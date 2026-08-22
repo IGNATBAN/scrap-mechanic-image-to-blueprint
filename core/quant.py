@@ -100,11 +100,21 @@ def oklab_to_srgb(lab: np.ndarray) -> np.ndarray:
 
 @dataclass
 class Palette:
-    """Набор доступных «материалов»: цвет + чем он получается в игре."""
+    """Набор доступных «материалов»: цвет + чем он получается в игре.
 
-    rgb: np.ndarray                      # (N, 3) uint8 — как выглядит в игре
+    `rgb` — средний цвет варианта. Но текстура блока растянута на `tiling`
+    блоков, поэтому один и тот же вариант в разных местах постройки
+    выглядит по-разному. `cells` хранит настоящий цвет каждого варианта в
+    каждой позиции: (P, P, N, 3), где P — общий период набора в блоках.
+    Позиция берётся по ЛОКАЛЬНЫМ координатам чертежа, а не по клетке
+    картинки, — проверено снимком из игры.
+    """
+
+    rgb: np.ndarray                      # (N, 3) uint8 — средний цвет
     paint: list[str] = field(default_factory=list)   # hex краски
     block: list[str] = field(default_factory=list)   # uuid блока
+    cells: np.ndarray | None = None      # (P, P, N, 3) uint8 — цвет по позициям
+    period: int = 1                      # P
 
     def __post_init__(self) -> None:
         self.rgb = np.asarray(self.rgb, dtype=np.uint8).reshape(-1, 3)
@@ -115,9 +125,52 @@ class Palette:
         self._lab = to_oklab(self.rgb)
         self._trees: dict[float, object] = {}
         self._luts: dict[tuple, np.ndarray] = {}
+        self._cell_trees: dict[float, list] = {}
+        self._cell_lab: np.ndarray | None = None
+        self._remaps: dict[float, np.ndarray] = {}
+        self.period = max(1, int(self.period))
+        if self.cells is not None:
+            self.cells = np.ascontiguousarray(self.cells, dtype=np.uint8)
+            if self.cells.shape != (self.period, self.period, len(self.rgb), 3):
+                self.cells = None
+                self.period = 1
 
     def __len__(self) -> int:
         return len(self.rgb)
+
+    # ── узор: цвет варианта в конкретной позиции ─────────────────────────
+
+    @property
+    def patterned(self) -> bool:
+        """Есть ли вообще разница между позициями."""
+        return self.cells is not None and self.period > 1
+
+    def cell_lab(self) -> np.ndarray:
+        """(P, P, N, 3) в OKLab. Считается один раз."""
+        if self._cell_lab is None:
+            src = self.cells if self.cells is not None else self.rgb.reshape(1, 1, -1, 3)
+            self._cell_lab = to_oklab(src.reshape(-1, 3)).reshape(src.shape)
+        return self._cell_lab
+
+    def residues(self, height: int, width: int, origin: tuple[int, int]):
+        """Номера позиций для картинки: (строки, столбцы).
+
+        Строка 0 картинки — верх, а по игровому Z верх это наибольшая
+        координата, поэтому строки идут в обратную сторону.
+        """
+        p = self.period
+        ox, oz = origin
+        rows = ((np.arange(height - 1, -1, -1, dtype=np.int64) + oz) % p).astype(np.int32)
+        cols = ((np.arange(width, dtype=np.int64) + ox) % p).astype(np.int32)
+        return rows, cols
+
+    def shown(self, keys: np.ndarray, origin: tuple[int, int] = (0, 0)) -> np.ndarray:
+        """Что игра покажет: (H, W) индексы -> (H, W, 3) uint8."""
+        if not self.patterned:
+            return self.rgb[keys]
+        h, w = keys.shape
+        rows, cols = self.residues(h, w, origin)
+        return self.cells[rows[:, None], cols[None, :], keys]
 
     def lab(self, lum_weight: float = 1.0) -> np.ndarray:
         """OKLab со взвешенной осью светлоты."""
@@ -147,6 +200,104 @@ class Palette:
             d = ((chunk[:, None, :] - pal[None, :, :]) ** 2).sum(axis=2)
             out[start:start + step] = np.argmin(d, axis=1)
         return out.reshape(lab.shape[:-1])
+
+    # ── подбор с учётом позиции ─────────────────────────────────────────
+
+    def _cell_scaled(self, lum_weight: float) -> np.ndarray:
+        """(P*P, N, 3) в OKLab со взвешенной светлотой."""
+        key = round(float(lum_weight), 3)
+        got = self._cell_trees.get(key)
+        if got is None:
+            lab = self.cell_lab().copy()
+            lab[..., 0] *= key
+            got = lab.reshape(-1, len(self.rgb), 3)
+            self._cell_trees[key] = got
+        return got
+
+    def nearest_at(self, lab: np.ndarray, origin: tuple[int, int],
+                   lum_weight: float = 1.0) -> np.ndarray:
+        """Ближайший вариант с учётом того, какая ячейка ляжет на клетку.
+
+        Дерева здесь нет намеренно: позиций до 256, на каждую пришлось бы
+        своё, а строятся они дольше, чем считается сам ответ. Внутри одной
+        позиции набор фиксирован, поэтому расстояния берутся матрицей —
+        |t|² - 2·t·p + |p|², где второе слагаемое это обычное умножение
+        матриц. Оно упирается в BLAS и обгоняет дерево на таких размерах.
+        """
+        if not self.patterned:
+            return self.nearest(lab, lum_weight)
+
+        h, w = lab.shape[:2]
+        rows, cols = self.residues(h, w, origin)
+        flat = np.ascontiguousarray(lab.reshape(-1, 3), dtype=np.float32)
+        flat = flat * np.array([lum_weight, 1.0, 1.0], dtype=np.float32)
+        cls = (rows[:, None] * self.period + cols[None, :]).reshape(-1)
+
+        # Четвёртая координата складывает |p|² прямо в умножение матриц:
+        # без неё пришлось бы отдельным проходом прибавлять норму к матрице
+        # расстояний, а она на больших картинках весит гигабайты.
+        pal = self._cell_scaled(lum_weight)                    # (C, N, 3)
+        aug = np.concatenate([-2.0 * pal, (pal ** 2).sum(-1, keepdims=True)], axis=-1)
+        aug = np.ascontiguousarray(np.swapaxes(aug, 1, 2), dtype=np.float32)   # (C, 4, N)
+        ones = np.ones((flat.shape[0], 1), dtype=np.float32)
+        flat4 = np.concatenate([flat, ones], axis=1)
+
+        out = np.empty(flat.shape[0], dtype=np.int32)
+        order = np.argsort(cls, kind="stable")
+        bounds = np.searchsorted(cls[order], np.arange(self.period ** 2 + 1))
+        chunk = max(1, (1 << 22) // max(1, len(self.rgb)))     # держим матрицу в разумных мегабайтах
+        for c in range(self.period ** 2):
+            lo, hi = bounds[c], bounds[c + 1]
+            if lo == hi:
+                continue
+            take = order[lo:hi]
+            here = aug[c]
+            for start in range(0, take.size, chunk):
+                part = take[start:start + chunk]
+                out[part] = np.argmin(flat4[part] @ here, axis=1)
+        return out.reshape(h, w)
+
+    def remap(self, lum_weight: float = 1.0, neighbours: int = 16) -> np.ndarray:
+        """(P, P, N): «что выбрала общая таблица -> что верно в этой позиции».
+
+        Диффузия ошибки идёт пиксель за пикселем, и позволить себе поиск по
+        всему набору на каждом шаге нельзя. Зато можно заранее переписать
+        ответ общей таблицы: у выбранного варианта берём его средний цвет
+        как оценку того, чего хотел пиксель, и ищем, кто ближе к этой
+        оценке настоящим цветом в этой позиции. Кандидаты — сам вариант и
+        его ближайшие соседи по среднему цвету: дальше ответа не бывает.
+        """
+        key = round(float(lum_weight), 3)
+        if key in self._remaps:
+            return self._remaps[key]
+
+        n = len(self.rgb)
+        if not self.patterned or n < 2:
+            table = np.tile(np.arange(n, dtype=np.int32), (self.period, self.period, 1))
+            self._remaps[key] = table
+            return table
+
+        want = self.lab(key)                                   # (N, 3)
+        m = min(int(neighbours), n - 1)
+        # Соседей ищем перебором, а не деревом: набор маленький, зато порядок
+        # получается тот же в Python и в браузере — ничьи разрешаются по
+        # меньшему индексу. Веб-версия обязана давать те же индексы.
+        d = ((want[:, None, :] - want[None, :, :]) ** 2).sum(-1)
+        np.fill_diagonal(d, np.inf)
+        near = np.argsort(d, axis=1, kind="stable")[:, :m].astype(np.int32)
+        cand = np.concatenate([np.arange(n, dtype=np.int32)[:, None], near], axis=1)
+
+        lab = self.cell_lab().copy()
+        lab[..., 0] *= key
+        rows = np.arange(n)
+        table = np.zeros((self.period, self.period, n), dtype=np.int32)
+        for cz in range(self.period):
+            for cx in range(self.period):
+                here = lab[cz, cx][cand]                       # (N, m+1, 3)
+                d = ((here - want[:, None, :]) ** 2).sum(-1)
+                table[cz, cx] = cand[rows, np.argmin(d, axis=1)]
+        self._remaps[key] = table
+        return table
 
 
 # границы куба OKLab, в который укладываются все реальные цвета sRGB
@@ -259,23 +410,31 @@ def quantize(
     lum_weight: float = 1.0,
     serpentine: bool = True,
     mask: np.ndarray | None = None,
+    origin: tuple[int, int] = (0, 0),
+    use_pattern: bool = True,
 ) -> np.ndarray:
     """Вернуть (H, W) int32 — индексы палитры для каждой клетки.
 
     mask: где False — клетка пустая, её цвет не влияет на соседей.
+    origin: сдвиг картинки в локальных координатах чертежа (x, z). От него
+    зависит, какая ячейка текстуры ляжет на какую клетку.
+    use_pattern: учитывать ли узор ПРИ ПОДБОРЕ. Показывать его всё равно
+    надо: набор с ячейками рисует то, что игрок увидит, независимо от того,
+    подстраивался под узор подбор или нет.
     """
     rgb = np.ascontiguousarray(rgb, dtype=np.uint8)
     lab = to_oklab(rgb)
 
     if method == "none" or strength <= 0:
-        return palette.nearest(lab, lum_weight)
+        return palette.nearest_at(lab, origin, lum_weight) if use_pattern             else palette.nearest(lab, lum_weight)
 
     if method in ORDERED:
-        return _ordered(lab, palette, method, strength, lum_weight)
+        return _ordered(lab, palette, method, strength, lum_weight, origin, use_pattern)
 
     if method not in KERNELS:
         method = "fs"
-    return _diffuse(lab, palette, method, strength, lum_weight, serpentine, mask)
+    return _diffuse(lab, palette, method, strength, lum_weight, serpentine, mask, origin,
+                    use_pattern)
 
 
 def _typical_step(palette: Palette, lum_weight: float) -> float:
@@ -293,7 +452,7 @@ def _typical_step(palette: Palette, lum_weight: float) -> float:
     return float(np.median(d))
 
 
-def _ordered(lab, palette, method, strength, lum_weight):
+def _ordered(lab, palette, method, strength, lum_weight, origin=(0, 0), use_pattern=True):
     """Упорядоченный дизеринг: сдвигаем цвет маской и берём ближайший."""
     h, w = lab.shape[:2]
     amp = _typical_step(palette, lum_weight) * 0.5 * float(strength)
@@ -303,10 +462,11 @@ def _ordered(lab, palette, method, strength, lum_weight):
     shifted[..., 0] += noise
     shifted[..., 1] += noise * 0.35
     shifted[..., 2] += noise * 0.35
-    return palette.nearest(shifted, lum_weight)
+    return palette.nearest_at(shifted, origin, lum_weight) if use_pattern         else palette.nearest(shifted, lum_weight)
 
 
-def _diffuse(lab, palette, method, strength, lum_weight, serpentine, mask):
+def _diffuse(lab, palette, method, strength, lum_weight, serpentine, mask, origin=(0, 0),
+             use_pattern=True):
     """Диффузия ошибки в OKLab, змейкой, с таблицей подстановки.
 
     Внутренний цикл принципиально последовательный: цвет пикселя зависит от
@@ -314,6 +474,12 @@ def _diffuse(lab, palette, method, strength, lum_weight, serpentine, mask):
     numpy: операция над массивом из трёх элементов стоит около микросекунды,
     и на сотнях тысяч пикселей это превращается в секунды. Скалярная версия
     быстрее примерно вчетверо. Векторизуются только границы строк.
+
+    Узор встроен так, чтобы не замедлить этот цикл: общая таблица даёт
+    индекс как раньше, а `palette.remap` одним обращением переписывает его
+    на верный для этой позиции. Ошибка при этом считается от того, что
+    игра ПОКАЖЕТ, а не от среднего цвета варианта, — иначе дизеринг
+    размазывает не ту разницу.
     """
     h, w = lab.shape[:2]
     offsets, divisor = KERNELS[method]
@@ -331,6 +497,16 @@ def _diffuse(lab, palette, method, strength, lum_weight, serpentine, mask):
     pal_l = pal[:, 0].tolist()
     pal_a = pal[:, 1].tolist()
     pal_b = pal[:, 2].tolist()
+
+    # узор: переписывание индекса и настоящий цвет ячейки, плоскими списками
+    patterned = palette.patterned and use_pattern
+    if patterned:
+        size = len(palette.rgb)
+        period = palette.period
+        remap_flat = palette.remap(lum_weight).reshape(-1).tolist()
+        cell_flat = palette.cell_lab().reshape(-1).tolist()
+        ox, oz = origin
+        col_of = [((x + ox) % period) for x in range(w)]
 
     lab_l, lab_a, lab_b = (np.ascontiguousarray(lab[..., i], dtype=np.float64) for i in range(3))
     out = np.zeros((h, w), dtype=np.int32)
@@ -350,6 +526,9 @@ def _diffuse(lab, palette, method, strength, lum_weight, serpentine, mask):
         order = range(w - 1, -1, -1) if reverse else range(w)
         flip = -1 if reverse else 1
         row_out = [0] * w
+        if patterned:
+            # строка 0 картинки — верх, а по игровому Z верх это наибольшая
+            row_class = ((h - 1 - y + oz) % period) * period
 
         for x in order:
             if has_mask and not row_mask[x]:
@@ -367,12 +546,20 @@ def _diffuse(lab, palette, method, strength, lum_weight, serpentine, mask):
             elif i2 > top: i2 = top
 
             idx = lut_flat[(i0 * n + i1) * n + i2]
+
+            if patterned:
+                base = (row_class + col_of[x]) * size
+                idx = remap_flat[base + idx]
+                spot = (base + idx) * 3
+                got_l, got_a, got_b = cell_flat[spot], cell_flat[spot + 1], cell_flat[spot + 2]
+            else:
+                got_l, got_a, got_b = pal_l[idx], pal_a[idx], pal_b[idx]
             row_out[x] = idx
 
             # без ограничения ошибка на насыщенных краях «взрывается»
-            el = pl - pal_l[idx]
-            ea = pa - pal_a[idx]
-            eb = pb - pal_b[idx]
+            el = pl - got_l
+            ea = pa - got_a
+            eb = pb - got_b
             if el > 0.35: el = 0.35
             elif el < -0.35: el = -0.35
             if ea > 0.35: ea = 0.35
@@ -487,10 +674,20 @@ def mean_error_rgb(src_rgb: np.ndarray, out_rgb: np.ndarray, mask: np.ndarray | 
 
 
 def mean_error(rgb: np.ndarray, palette: Palette, indices: np.ndarray,
-               mask: np.ndarray | None = None) -> float:
-    """Средняя ошибка цвета в OKLab — число, по которому видно, стало ли лучше."""
+               mask: np.ndarray | None = None, origin: tuple[int, int] = (0, 0)) -> float:
+    """Средняя ошибка цвета в OKLab — число, по которому видно, стало ли лучше.
+
+    Сравнивать надо с тем, что игра ПОКАЖЕТ в этой позиции, а не со средним
+    цветом варианта, иначе узор в замер не попадёт.
+    """
     lab = to_oklab(rgb)
-    diff = lab - palette._lab[indices]
+    if palette.patterned:
+        h, w = indices.shape
+        rows, cols = palette.residues(h, w, origin)
+        shown = palette.cell_lab()[rows[:, None], cols[None, :], indices]
+    else:
+        shown = palette._lab[indices]
+    diff = lab - shown
     dist = np.sqrt((diff ** 2).sum(axis=-1))
     if mask is not None:
         dist = dist[mask]

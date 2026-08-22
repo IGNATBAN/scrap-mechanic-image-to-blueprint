@@ -10,10 +10,16 @@ import { toOklabArray } from './oklab.js';
 
 const f = Math.fround;
 
+/** Остаток как в Python: для отрицательных тоже неотрицательный. */
+function mod(a, b) {
+  const r = a % b;
+  return r < 0 ? r + b : r;
+}
+
 // ── набор материалов с поиском ближайшего ────────────────────────────────
 
 export class Palette {
-  constructor({ rgb, paint, block }) {
+  constructor({ rgb, paint, block, cells = null, period = 1 }) {
     this.rgb = rgb;
     this.size = rgb.length / 3;
     this.paint = paint || [];
@@ -21,6 +27,168 @@ export class Palette {
     this.lab = toOklabArray(rgb, this.size);
     this._luts = new Map();
     this._steps = new Map();
+    this._remaps = new Map();
+    this._cellLab = null;
+    // Текстура блока растянута на tiling блоков, поэтому один и тот же
+    // вариант в разных местах постройки выглядит по-разному. cells хранит
+    // настоящий цвет каждого варианта в каждой позиции: P*P*N*3.
+    this.period = Math.max(1, period | 0);
+    this.cells = null;
+    if (cells && cells.length === this.period * this.period * this.size * 3) {
+      this.cells = cells;
+    } else {
+      this.period = 1;
+    }
+  }
+
+  /** Есть ли вообще разница между позициями. */
+  get patterned() {
+    return this.cells !== null && this.period > 1;
+  }
+
+  /** OKLab для таблицы позиций, считается один раз. */
+  cellLab() {
+    if (!this._cellLab) {
+      const src = this.cells || this.rgb;
+      this._cellLab = toOklabArray(src, src.length / 3);
+    }
+    return this._cellLab;
+  }
+
+  /**
+   * Номера позиций для картинки. Строка 0 картинки — верх, а по игровому Z
+   * верх это наибольшая координата, поэтому строки идут в обратную сторону.
+   */
+  residues(height, width, origin) {
+    const p = this.period;
+    const [ox, oz] = origin;
+    const rows = new Int32Array(height);
+    const cols = new Int32Array(width);
+    for (let y = 0; y < height; y++) rows[y] = mod(height - 1 - y + oz, p);
+    for (let x = 0; x < width; x++) cols[x] = mod(x + ox, p);
+    return { rows, cols };
+  }
+
+  /** Что игра покажет: индексы -> цвет (Uint8Array n*3). */
+  shown(keys, width, height, origin = [0, 0]) {
+    const out = new Uint8Array(width * height * 3);
+    if (!this.patterned) {
+      for (let i = 0; i < width * height; i++) {
+        const s = keys[i] * 3;
+        out[i * 3] = this.rgb[s];
+        out[i * 3 + 1] = this.rgb[s + 1];
+        out[i * 3 + 2] = this.rgb[s + 2];
+      }
+      return out;
+    }
+    const { rows, cols } = this.residues(height, width, origin);
+    const n = this.size;
+    for (let y = 0; y < height; y++) {
+      const base = rows[y] * this.period;
+      for (let x = 0; x < width; x++) {
+        const i = y * width + x;
+        const s = ((base + cols[x]) * n + keys[i]) * 3;
+        out[i * 3] = this.cells[s];
+        out[i * 3 + 1] = this.cells[s + 1];
+        out[i * 3 + 2] = this.cells[s + 2];
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Ближайший вариант с учётом того, какая ячейка ляжет на клетку.
+   * Перебор такой же, как в nearest, только набор берётся для позиции.
+   */
+  nearestAt(lab, width, height, origin, lumWeight = 1) {
+    if (!this.patterned) return this.nearest(lab, width * height, lumWeight);
+    const { rows, cols } = this.residues(height, width, origin);
+    const pal = this.cellLab();
+    const m = this.size;
+    const wl = lumWeight;
+    const res = new Int32Array(width * height);
+    for (let y = 0; y < height; y++) {
+      const base = rows[y] * this.period;
+      for (let x = 0; x < width; x++) {
+        const i = y * width + x;
+        const L = lab[i * 3] * wl, A = lab[i * 3 + 1], B = lab[i * 3 + 2];
+        const off = (base + cols[x]) * m * 3;
+        let best = 0, bestD = Infinity;
+        for (let j = 0; j < m; j++) {
+          const dL = pal[off + j * 3] * wl - L;
+          const dA = pal[off + j * 3 + 1] - A;
+          const dB = pal[off + j * 3 + 2] - B;
+          const d = dL * dL + dA * dA + dB * dB;
+          if (d < bestD) { bestD = d; best = j; }
+        }
+        res[i] = best;
+      }
+    }
+    return res;
+  }
+
+  /**
+   * «Что выбрала общая таблица -> что верно в этой позиции».
+   * Диффузия ошибки идёт пиксель за пикселем, перебирать весь набор на
+   * каждом шаге нельзя. Зато ответ таблицы можно переписать заранее:
+   * у выбранного варианта берём его средний цвет как оценку того, чего
+   * хотел пиксель, и ищем, кто ближе к ней настоящим цветом в этой позиции.
+   * Кандидаты — сам вариант и его ближайшие соседи по среднему цвету.
+   */
+  remap(lumWeight = 1, neighbours = 16) {
+    const key = Math.round(lumWeight * 1000);
+    if (this._remaps.has(key)) return this._remaps.get(key);
+    const n = this.size;
+    const p = this.period;
+    if (!this.patterned || n < 2) {
+      const flat = new Int32Array(p * p * n);
+      for (let c = 0; c < p * p; c++) for (let i = 0; i < n; i++) flat[c * n + i] = i;
+      this._remaps.set(key, flat);
+      return flat;
+    }
+
+    const want = this.lab;
+    const wl = lumWeight;
+    const m = Math.min(neighbours, n - 1);
+    const cand = new Int32Array(n * (m + 1));
+    const order = new Array(n);
+    for (let i = 0; i < n; i++) order[i] = i;
+    const dist = new Float64Array(n);
+    for (let i = 0; i < n; i++) {
+      const L = want[i * 3] * wl, A = want[i * 3 + 1], B = want[i * 3 + 2];
+      for (let j = 0; j < n; j++) {
+        if (j === i) { dist[j] = Infinity; continue; }
+        const dL = want[j * 3] * wl - L, dA = want[j * 3 + 1] - A, dB = want[j * 3 + 2] - B;
+        dist[j] = dL * dL + dA * dA + dB * dB;
+      }
+      // устойчивая сортировка: при равных расстояниях выигрывает меньший
+      // индекс — так же, как numpy.argsort(kind='stable')
+      order.sort((a, b) => (dist[a] - dist[b]) || (a - b));
+      cand[i * (m + 1)] = i;
+      for (let k = 0; k < m; k++) cand[i * (m + 1) + k + 1] = order[k];
+      for (let k = 0; k < n; k++) order[k] = k;
+    }
+
+    const pal = this.cellLab();
+    const flat = new Int32Array(p * p * n);
+    for (let c = 0; c < p * p; c++) {
+      const off = c * n * 3;
+      for (let i = 0; i < n; i++) {
+        const L = want[i * 3] * wl, A = want[i * 3 + 1], B = want[i * 3 + 2];
+        let best = cand[i * (m + 1)], bestD = Infinity;
+        for (let k = 0; k <= m; k++) {
+          const j = cand[i * (m + 1) + k];
+          const dL = pal[off + j * 3] * wl - L;
+          const dA = pal[off + j * 3 + 1] - A;
+          const dB = pal[off + j * 3 + 2] - B;
+          const d = dL * dL + dA * dA + dB * dB;
+          if (d < bestD) { bestD = d; best = j; }
+        }
+        flat[c * n + i] = best;
+      }
+    }
+    this._remaps.set(key, flat);
+    return flat;
   }
 
   /**
@@ -186,21 +354,26 @@ function maskValue(name, x, y) {
  * mask: Uint8Array, 0 = клетка пустая, её цвет не влияет на соседей.
  */
 export function quantize(rgb, w, h, palette, method = 'fs', opts = {}) {
-  const { strength = 1, lumWeight = 1, serpentine = true, mask = null } = opts;
+  // usePattern — учитывать ли узор ПРИ ПОДБОРЕ. Показывать его всё равно
+  // надо: набор с ячейками рисует то, что игрок увидит.
+  const { strength = 1, lumWeight = 1, serpentine = true, mask = null,
+          origin = [0, 0], usePattern = true } = opts;
   const n = w * h;
   const lab = toOklabArray(rgb, n);
 
   if (method === 'none' || strength <= 0) {
-    return palette.nearest(lab, n, lumWeight);
+    return usePattern ? palette.nearestAt(lab, w, h, origin, lumWeight)
+                      : palette.nearest(lab, n, lumWeight);
   }
   if (method in ORDERED) {
-    return ordered(lab, w, h, palette, method, strength, lumWeight);
+    return ordered(lab, w, h, palette, method, strength, lumWeight, origin, usePattern);
   }
   if (!(method in KERNELS)) method = 'fs';
-  return diffuse(lab, w, h, palette, method, strength, lumWeight, serpentine, mask);
+  return diffuse(lab, w, h, palette, method, strength, lumWeight, serpentine, mask, origin,
+                 usePattern);
 }
 
-function ordered(lab, w, h, palette, method, strength, lumWeight) {
+function ordered(lab, w, h, palette, method, strength, lumWeight, origin = [0, 0], usePattern = true) {
   const amp = palette.typicalStep(lumWeight) * 0.5 * strength;
   const shifted = new Float32Array(lab.length);
   for (let y = 0; y < h; y++) {
@@ -212,10 +385,19 @@ function ordered(lab, w, h, palette, method, strength, lumWeight) {
       shifted[i + 2] = f(lab[i + 2] + noise * 0.35);
     }
   }
-  return palette.nearest(shifted, w * h, lumWeight);
+  return usePattern ? palette.nearestAt(shifted, w, h, origin, lumWeight)
+                    : palette.nearest(shifted, w * h, lumWeight);
 }
 
-function diffuse(lab, w, h, palette, method, strength, lumWeight, serpentine, mask) {
+/**
+ * Диффузия ошибки в OKLab, змейкой, с таблицей подстановки.
+ *
+ * Узор встроен так, чтобы не замедлить цикл: общая таблица даёт индекс как
+ * раньше, а remap одним обращением переписывает его на верный для этой
+ * позиции. Ошибка при этом считается от того, что игра ПОКАЖЕТ, — иначе
+ * дизеринг размазывает не ту разницу.
+ */
+function diffuse(lab, w, h, palette, method, strength, lumWeight, serpentine, mask, origin = [0, 0], usePattern = true) {
   const { off, div } = KERNELS[method];
   const weights = off.map(([dx, dy, wt]) => [dx, dy, (wt / div) * strength]);
   const depth = Math.max(...off.map(([, dy]) => dy)) + 1;
@@ -233,11 +415,21 @@ function diffuse(lab, w, h, palette, method, strength, lumWeight, serpentine, ma
   // ошибка копится на несколько строк вперёд, как в numpy-версии
   const err = new Float32Array(depth * w * 3);
 
+  const patterned = palette.patterned && usePattern;
+  const size = palette.size;
+  const period = palette.period;
+  const remapFlat = patterned ? palette.remap(lumWeight) : null;
+  const cellLab = patterned ? palette.cellLab() : null;
+  const colOf = new Int32Array(w);
+  if (patterned) for (let x = 0; x < w; x++) colOf[x] = mod(x + origin[0], period);
+
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w * 3; x++) row[x] = f(lab[y * w * 3 + x] + err[x]);
 
     const reverse = serpentine && (y % 2 === 1);
     const flip = reverse ? -1 : 1;
+    // строка 0 картинки — верх, а по игровому Z верх это наибольшая
+    const rowClass = patterned ? mod(h - 1 - y + origin[1], period) * period : 0;
 
     for (let step = 0; step < w; step++) {
       const x = reverse ? w - 1 - step : step;
@@ -249,13 +441,22 @@ function diffuse(lab, w, h, palette, method, strength, lumWeight, serpentine, ma
       const gi0 = clampIdx((L - LUT_LO[0]) * scale[0]);
       const gi1 = clampIdx((A - LUT_LO[1]) * scale[1]);
       const gi2 = clampIdx((B - LUT_LO[2]) * scale[2]);
-      const idx = lut[(gi0 * LUT_N + gi1) * LUT_N + gi2];
+      let idx = lut[(gi0 * LUT_N + gi1) * LUT_N + gi2];
+      let gotL, gotA, gotB;
+      if (patterned) {
+        const base = (rowClass + colOf[x]) * size;
+        idx = remapFlat[base + idx];
+        const spot = (base + idx) * 3;
+        gotL = cellLab[spot]; gotA = cellLab[spot + 1]; gotB = cellLab[spot + 2];
+      } else {
+        gotL = palLab[idx * 3]; gotA = palLab[idx * 3 + 1]; gotB = palLab[idx * 3 + 2];
+      }
       out[y * w + x] = idx;
 
       // без ограничения ошибка на насыщенных краях «взрывается»
-      const eL = clampErr(L - palLab[idx * 3]);
-      const eA = clampErr(A - palLab[idx * 3 + 1]);
-      const eB = clampErr(B - palLab[idx * 3 + 2]);
+      const eL = clampErr(L - gotL);
+      const eA = clampErr(A - gotA);
+      const eB = clampErr(B - gotB);
 
       for (let k = 0; k < weights.length; k++) {
         const dx = weights[k][0], dy = weights[k][1], wt = weights[k][2];

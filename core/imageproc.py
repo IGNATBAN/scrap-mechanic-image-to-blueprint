@@ -30,6 +30,7 @@ class Grid:
     error: float = 0.0                 # ошибка «как видно с расстояния», OKLab
     error_close: float = 0.0           # ошибка по каждому блоку, OKLab
     fit: dict | None = None            # что подобрала автоподгонка
+    origin: tuple[int, int] = (0, 0)   # сдвиг в локальных координатах чертежа
 
 
 def load(data: bytes) -> Image.Image:
@@ -111,6 +112,10 @@ def build_grid(
     gamma: float = 1.0,
     flip_h: bool = False,
     edits=None,
+    pattern: bool = True,               # учитывать узор ПРИ ПОДБОРЕ
+    pattern_known: bool = True,         # фаза узора предсказуема (не дробим)
+    orientation: str = "vertical",      # от него зависит фаза узора
+    center: bool = True,
 ) -> Grid:
     img = load(data)
     src = img.size
@@ -143,8 +148,14 @@ def build_grid(
 
     fit_info = None
     if color_mode == "palette":
+        from . import blueprint
+
+        origin = blueprint.origin_of(dst[0], dst[1], orientation, center)
+        # Ячейки нужны всегда, когда фаза известна: даже если подбор их не
+        # использует, предпросмотр обязан показывать то, что покажет игра.
         material_set = materials.build_palette(
-            pal.PALETTE_HEX, base_block or "", list(extra_blocks or []), dedupe=dedupe
+            pal.PALETTE_HEX, base_block or "", list(extra_blocks or []), dedupe=dedupe,
+            with_cells=pattern_known,
         )
         if autofit:
             fit_info = quant.fit_to_palette(rgb[mask].reshape(-1, 1, 3) if mask.any() else rgb,
@@ -154,13 +165,17 @@ def build_grid(
         keys = quant.quantize(
             rgb, material_set, method,
             strength=strength, lum_weight=lum_weight, serpentine=serpentine, mask=mask,
+            origin=origin, use_pattern=pattern,
         ).astype(np.int32)
-        shown = material_set.rgb[keys]
+        # предпросмотр показывает узор: цвет берётся для той позиции, в
+        # которой блок окажется в постройке
+        shown = material_set.shown(keys, origin)
         # «издали» — честная метрика для дизеринга, «в упор» — для заливок
         error = quant.perceived_error(rgb, shown, mask)
         grid = Grid(rgb=shown, keys=keys, mask=mask, width=dst[0], height=dst[1],
-                    source_size=src, palette=material_set, error=error, fit=fit_info)
-        grid.error_close = quant.mean_error(rgb, material_set, keys, mask)
+                    source_size=src, palette=material_set, error=error, fit=fit_info,
+                    origin=origin)
+        grid.error_close = quant.mean_error(rgb, material_set, keys, mask, origin)
     else:
         keys = _pack(rgb)
         grid = Grid(rgb=rgb, keys=keys, mask=mask, width=dst[0], height=dst[1],
@@ -203,7 +218,16 @@ def apply_edits(grid: Grid, edits) -> int:
             lookup[hexcolor] = key
         grid.keys[y, x] = key
         grid.mask[y, x] = True
-        grid.rgb[y, x] = grid.palette.rgb[key] if grid.palette is not None else _unpack(key)
+        if grid.palette is None:
+            grid.rgb[y, x] = _unpack(key)
+        elif grid.palette.patterned:
+            # цвет зависит от места: та же краска рядом ляжет иначе
+            ox, oz = grid.origin
+            cz = (grid.height - 1 - y + oz) % grid.palette.period
+            cx = (x + ox) % grid.palette.period
+            grid.rgb[y, x] = grid.palette.cells[cz, cx, key]
+        else:
+            grid.rgb[y, x] = grid.palette.rgb[key]
         applied += 1
 
     return applied

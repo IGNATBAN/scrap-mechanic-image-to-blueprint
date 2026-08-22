@@ -119,7 +119,45 @@ def _params(raw: dict) -> dict:
         "saturation": _num(raw, "saturation", 1.0, 0.0, 3.0),
         "gamma": _num(raw, "gamma", 1.0, 0.3, 3.0),
         "flip_h": _flag(raw, "flip_h", False),
+        **_pattern_params(raw),
     }
+
+
+def _pattern_params(raw: dict) -> dict:
+    """Учитывать ли узор текстуры и от какой точки его считать.
+
+    Узор привязан к локальным координатам чертежа, а они зависят от
+    ориентации. При дроблении их вообще не предсказать: игрок сваривает
+    модули, и у сваренного тела своя система координат — общий сдвиг узора
+    останется неизвестным, а неверная фаза хуже, чем никакой. Поэтому на
+    дроблёной постройке узор в подборе не учитывается.
+    """
+    whole = not (_flag(raw, "split") and
+                 int(_num(raw, "cols", 1, 1, 4096, int)) * int(_num(raw, "rows", 1, 1, 4096, int)) > 1)
+    return {
+        "pattern": _flag(raw, "pattern", True) and whole,
+        "pattern_known": whole,
+        "orientation": "horizontal" if raw.get("orientation") == "horizontal" else "vertical",
+        "center": True,
+    }
+
+
+def _worst_noisy(grid, limit: int = 3) -> list[str]:
+    """Самые пятнистые блоки из тех, что попали в картинку.
+
+    Узор есть почти у всех, поэтому перечислять их все бессмысленно —
+    полезны только те, из-за которых заливка перестанет быть ровной.
+    """
+    if grid.palette is None:
+        return []
+    over = materials.load()
+    seen = []
+    for uuid in {u for u in grid.palette.block if u}:
+        o = over.get(uuid)
+        if o is not None and o.span >= materials.NOISY_SPAN:
+            seen.append((o.span, blocks.get(uuid).title))
+    seen.sort(reverse=True)
+    return [title for _, title in seen[:limit]]
 
 
 def _resolver(grid, base_block: str):
@@ -361,6 +399,11 @@ async def preview(request: Request) -> JSONResponse:
             "partsHard": PARTS_HARD,
             "edgesX": ex,
             "edgesY": ey,
+            "pattern": bool(params.get("pattern")),
+            "patternShown": bool(grid.palette is not None and grid.palette.patterned),
+            "patternAsked": _flag(body, "pattern", True),
+            "patternPeriod": grid.palette.period if grid.palette is not None else 1,
+            "noisyBlocks": _worst_noisy(grid),
         }
     )
 

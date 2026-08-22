@@ -19,11 +19,11 @@ export const PARTS_SOFT = 50_000;
 
 const paletteCache = new Map();
 
-function getPalette(baseBlock, extraBlocks, dedupe) {
-  const key = `${baseBlock}|${extraBlocks.join(',')}|${dedupe}`;
+function getPalette(baseBlock, extraBlocks, dedupe, withCells = true) {
+  const key = `${baseBlock}|${extraBlocks.join(',')}|${dedupe}|${withCells ? 1 : 0}`;
   let p = paletteCache.get(key);
   if (!p) {
-    p = new Palette(pal.buildPalette(pal.PALETTE_HEX, baseBlock, extraBlocks, dedupe));
+    p = new Palette(pal.buildPalette(pal.PALETTE_HEX, baseBlock, extraBlocks, dedupe, withCells));
     if (paletteCache.size > 8) paletteCache.clear();
     paletteCache.set(key, p);
   }
@@ -42,6 +42,11 @@ export function buildGrid(source, params) {
     alphaMode = 'cutout', alphaThreshold = 128, background = 'FFFFFF',
     brightness = 1, contrast = 1, saturation = 1, gamma = 1, flipH = false,
     edits = null,
+    // Узор текстуры блока. Он привязан к локальным координатам чертежа, а
+    // они зависят от ориентации. При дроблении фазу не предсказать: у
+    // сваренного тела своя система координат, и общий сдвиг останется
+    // неизвестным — а неверная фаза хуже, чем никакой.
+    pattern = true, patternKnown = true, orientation = 'vertical',
   } = params;
 
   let src = source;
@@ -98,23 +103,24 @@ export function buildGrid(source, params) {
   let shown = rgb;
   let error = 0;
 
+  let origin = [0, 0];
   if (colorMode === 'palette') {
-    palette = getPalette(baseBlock, extraBlocks, dedupe);
-    keys = quantize(rgb, w, h, palette, method, { strength, lumWeight, serpentine, mask });
-    shown = new Uint8Array(n * 3);
-    for (let i = 0; i < n; i++) {
-      const k = keys[i];
-      shown[i * 3] = palette.rgb[k * 3];
-      shown[i * 3 + 1] = palette.rgb[k * 3 + 1];
-      shown[i * 3 + 2] = palette.rgb[k * 3 + 2];
-    }
+    origin = bp.originOf(w, h, orientation, true);
+    // Ячейки нужны всегда, когда фаза известна: даже если подбор их не
+    // использует, предпросмотр обязан показывать то, что покажет игра.
+    palette = getPalette(baseBlock, extraBlocks, dedupe, patternKnown);
+    keys = quantize(rgb, w, h, palette, method,
+                    { strength, lumWeight, serpentine, mask, origin, usePattern: pattern });
+    // предпросмотр показывает узор: цвет берётся для той позиции, в
+    // которой блок окажется в постройке
+    shown = palette.shown(keys, w, h, origin);
     error = meanErrorRgb(rgb, shown, n, mask);
   } else {
     keys = colorKeys(rgb, n);
   }
 
   const grid = { rgb: shown, keys, mask, width: w, height: h, palette, error, clamped,
-                 sourceWidth: source.width, sourceHeight: source.height };
+                 origin, sourceWidth: source.width, sourceHeight: source.height };
   if (edits && edits.length) applyEdits(grid, edits);
   return grid;
 }
@@ -177,9 +183,22 @@ export function applyEdits(grid, edits) {
     if (key === undefined) { key = keyFor(grid, hex); lookup.set(hex, key); }
     grid.keys[i] = key;
     grid.mask[i] = 1;
-    const [r, g, b] = grid.palette
-      ? [grid.palette.rgb[key * 3], grid.palette.rgb[key * 3 + 1], grid.palette.rgb[key * 3 + 2]]
-      : [(key >> 16) & 255, (key >> 8) & 255, key & 255];
+    let r, g, b;
+    if (!grid.palette) {
+      r = (key >> 16) & 255; g = (key >> 8) & 255; b = key & 255;
+    } else if (grid.palette.patterned) {
+      // цвет зависит от места: та же краска рядом ляжет иначе
+      const p = grid.palette.period;
+      const [ox, oz] = grid.origin || [0, 0];
+      const cz = ((grid.height - 1 - y + oz) % p + p) % p;
+      const cx = ((x + ox) % p + p) % p;
+      const s = ((cz * p + cx) * grid.palette.size + key) * 3;
+      r = grid.palette.cells[s]; g = grid.palette.cells[s + 1]; b = grid.palette.cells[s + 2];
+    } else {
+      r = grid.palette.rgb[key * 3];
+      g = grid.palette.rgb[key * 3 + 1];
+      b = grid.palette.rgb[key * 3 + 2];
+    }
     grid.rgb[i * 3] = r; grid.rgb[i * 3 + 1] = g; grid.rgb[i * 3 + 2] = b;
   }
 }

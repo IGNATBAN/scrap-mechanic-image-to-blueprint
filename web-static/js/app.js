@@ -73,7 +73,7 @@ async function boot() {
 
   const usable = pal.usableBlocks();
   $('blockList').innerHTML = usable.map((m) => `<label><input type="checkbox" value="${m.uuid}" checked>
-    <span>${m.name.replace('blk_', '')}</span>
+    <span>${m.name.replace('blk_', '')}${pal.isNoisy(m) ? ` <em>${t('blocks.noisyTag')}</em>` : ''}</span>
     <span class="keeps">${Math.round((1 - m.alpha) * 100)}%</span></label>`).join('');
   $('blockList').addEventListener('change', () => schedule());
   $('blocksNote').textContent = t('blocks.count', { n: usable.length });
@@ -153,7 +153,8 @@ const getColorMode = segment('colorMode', (v) => {
   updateColorHint();
   schedule();
 });
-const getOrientation = segment('orientation', () => {});
+// ориентация задаёт локальные координаты, а от них зависит фаза узора
+const getOrientation = segment('orientation', () => schedule(0));
 const getAlphaMode = segment('alphaMode', (v) => {
   $('bgRow').classList.toggle('hidden', v !== 'flatten');
   $('alphaThRow').classList.toggle('hidden', v === 'flatten');
@@ -212,7 +213,20 @@ function params() {
     gamma: +$('gamma').value,
     flipH: $('flipH').checked,
     edits: state.edits,
+    // Узор считается по локальным координатам чертежа. У дроблёной постройки
+    // их не предсказать: модули сваривают, и у общего тела своя система
+    // координат. Неверная фаза хуже, чем никакой, — поэтому выключаем.
+    pattern: $('pattern').checked && !splitOn(),
+    patternKnown: !splitOn(),
+    orientation: getOrientation(),
   };
+}
+
+/** Будет ли постройка дробиться на модули. */
+function splitOn() {
+  if (!$('split').checked) return false;
+  if (getSplitMode() === 'size') return true;
+  return (+$('cols').value) * (+$('rows').value) > 1;
 }
 
 function splitParams(gridW, gridH) {
@@ -308,8 +322,35 @@ function render(grid, rects, modules) {
   }
 }
 
+/** Что сейчас с узором: учтён, выключен дроблением, какие блоки пятнят. */
+function renderPatternNote(grid) {
+  const box = $('patternNote');
+  if (!box) return;
+  const bits = [];
+  const on = $('pattern').checked && !splitOn() && grid.palette && grid.palette.patterned;
+  if (on) {
+    bits.push(t('pattern.on', { n: grid.palette.period }));
+  } else {
+    if ($('pattern').checked && splitOn()) bits.push(t('pattern.offSplit'));
+    // узор не учтён — тогда и стоит сказать, из-за чего будет пестрить
+    if (grid.palette) {
+      const noisy = [];
+      for (const uuid of new Set(grid.palette.block)) {
+        const over = pal.materials().get(uuid);
+        if (over && pal.isNoisy(over)) noisy.push([pal.overlaySpan(over), over.name.replace('blk_', '')]);
+      }
+      noisy.sort((a, b) => b[0] - a[0]);
+      if (noisy.length) {
+        bits.push(t('pattern.noisy', { list: noisy.slice(0, 3).map((r) => r[1]).join(', ') }));
+      }
+    }
+  }
+  box.textContent = bits.join(' ');
+}
+
 function showStats(grid, s, modules, ms) {
   $('stats').classList.remove('hidden');
+  renderPatternNote(grid);
   $('stGrid').textContent = `${grid.width}×${grid.height}`;
   $('stMeters').textContent = `${(grid.width * 0.25).toFixed(1)}×${(grid.height * 0.25).toFixed(1)} м`;
   $('stColors').textContent = num(s.colors);
@@ -560,7 +601,7 @@ slider('lumWeight', (v) => (+v).toFixed(1));
 slider('dedupe', (v) => (+v).toFixed(3));
 ['alphaThreshold', 'maxBound', 'depth', 'target'].forEach((id) => slider(id));
 
-['resample', 'method', 'background', 'flipH', 'merge', 'serpentine', 'block'].forEach((id) =>
+['resample', 'method', 'background', 'flipH', 'merge', 'serpentine', 'block', 'pattern'].forEach((id) =>
   $(id).addEventListener('input', schedule));
 $('keepRatio').addEventListener('change', () => { syncHeight(); schedule(); });
 $('merge').addEventListener('change', () => $('boundRow').classList.toggle('hidden', !$('merge').checked));

@@ -94,6 +94,62 @@ export async function runTests({ vectors, materials, bluenoise }) {
   ok('набор с блоками', await digest(widePal.rgb) === v.palettes.wide.rgbHash,
     `${widePal.size} против ${v.palettes.wide.size}`);
 
+  // ── узор блока ────────────────────────────────────────────────────────
+  const cellBad = [];
+  for (const [uuid, exp] of Object.entries(v.cells || {})) {
+    const o = pal.materials().get(uuid);
+    if (!o || !o.cells || o.cells.n !== exp.n) { cellBad.push(uuid); continue; }
+    if (Math.abs(pal.overlaySpan(o) - exp.span) > 1e-3) { cellBad.push(uuid + ' размах'); continue; }
+    const corner = [o.cells.a[0], o.cells.tint[0], o.cells.tint[1], o.cells.tint[2]];
+    if (corner.some((val, k) => Math.abs(val - exp.corner[k]) > 1e-5)) {
+      cellBad.push(uuid + ' угол');
+      continue;
+    }
+    const shown = pal.applyOverlayCells(Uint8Array.from([223, 127, 0]), o);
+    for (let i = 0; i < exp.onOrange.length; i++) {
+      for (let k = 0; k < 3; k++) {
+        if (shown.rgb[i * 3 + k] !== exp.onOrange[i][k]) { cellBad.push(uuid + ' цвет'); break; }
+      }
+    }
+  }
+  ok('таблицы ячеек блоков', !cellBad.length, cellBad.slice(0, 3).join(', '));
+
+  ok('период набора с блоками', widePal.period === v.remap.period && widePal.size === v.remap.size,
+    `${widePal.period} против ${v.remap.period}`);
+  ok('цвета по позициям', await digest(widePal.cells) === v.remap.cellsHash);
+  ok('таблица пересчёта по позициям',
+    await digest(int32Bytes(widePal.remap(1))) === v.remap.hash);
+
+  const badPattern = [];
+  for (const [name, exp] of Object.entries(v.quantizePattern || {})) {
+    const [method, coords] = name.split('@');
+    const origin = coords.split(',').map(Number);
+    const keys = quantize(rgb, w, h, widePal, method,
+      { strength: 1, lumWeight: 1, serpentine: true, mask, origin });
+    if (await digest(int32Bytes(keys)) !== exp.hash) { badPattern.push(name); continue; }
+    if (await digest(widePal.shown(keys, w, h, origin)) !== exp.shownHash) {
+      badPattern.push(name + ' (цвет)');
+    }
+  }
+  ok('подбор с узором', !badPattern.length,
+    badPattern.length ? badPattern.join(', ') : `${Object.keys(v.quantizePattern || {}).length} прогонов`);
+
+  // Фаза узора берётся из локальных координат чертежа: если originOf
+  // разойдётся с buildJson, предпросмотр покажет одно, а игра — другое.
+  const phaseBad = [];
+  for (const orient of ['vertical', 'horizontal']) {
+    const gw = 37, gh = 21;
+    const [ox, oz] = bp.originOf(gw, gh, orient, true);
+    for (const [x, y] of [[0, 0], [13, 5], [36, 20]]) {
+      const text = bp.buildJson([[x, y, 1, 1, 0]], gw, gh, bp.rgbResolver('uuid'), orient, true, 1);
+      const pos = JSON.parse(text).bodies[0].childs[0].pos;
+      const wantV = gh - 1 - y + oz;
+      const gotV = orient === 'vertical' ? pos.z : pos.y;
+      if (pos.x !== x + ox || gotV !== wantV) phaseBad.push(`${orient} (${x},${y})`);
+    }
+  }
+  ok('фаза узора совпадает с координатами чертежа', !phaseBad.length, phaseBad.slice(0, 2).join(', '));
+
   // ── квантование ───────────────────────────────────────────────────────
   const badQuant = [];
   for (const [name, exp] of Object.entries(v.quantize)) {

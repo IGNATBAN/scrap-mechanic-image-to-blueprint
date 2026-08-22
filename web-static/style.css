@@ -307,3 +307,7 @@ button.ghost.on { background: linear-gradient(180deg, var(--orange), var(--orang
   background: linear-gradient(180deg, var(--orange), var(--orange-dark));
   color: #1a1000; border-color: #8a5a00;
 }
+
+/* пометки в списке блоков: узор и блеск */
+.blocklist em { font-style: normal; font-size: 10px; color: var(--warn, #d8b260); border: 1px solid currentColor; border-radius: 2px; padding: 0 3px; margin-left: 3px; }
+#patternNote:empty { display: none; }

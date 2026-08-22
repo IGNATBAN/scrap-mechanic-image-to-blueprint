@@ -39,6 +39,21 @@ _CHILD = (
 )
 
 
+def origin_of(grid_w: int, grid_h: int, orientation: str = VERTICAL, center: bool = True) -> tuple[int, int]:
+    """Сдвиг картинки в локальных координатах чертежа: (по горизонтали, по вертикали).
+
+    От него зависит, какая ячейка текстуры ляжет на какую клетку: развёртка
+    в игре считается от локальных координат блока (проверено снимком).
+    Клетка (x, y) картинки оказывается в локальных
+        (x + ox,  grid_h - 1 - y + oz).
+    Обе формулы обязаны совпадать с build_json ниже — иначе узор в
+    предпросмотре разъедется с постройкой.
+    """
+    ox = -(grid_w // 2) if center else 0
+    oz = (-(grid_h // 2) if center else 0) if orientation == HORIZONTAL else 0
+    return ox, oz
+
+
 def rgb_resolver(shape_id: str):
     """Ключ = упакованный цвет 0xRRGGBB, блок один на всю постройку."""
     return lambda key: ("%06X" % key, shape_id)

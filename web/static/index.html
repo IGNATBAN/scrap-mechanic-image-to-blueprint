@@ -107,6 +107,12 @@
             <button type="button" class="ghost" id="blocksFlat">Только ровные</button>
           </div>
           <div id="blockList" class="blocklist"></div>
+          <label class="check"><input type="checkbox" id="pattern" checked><span data-i18n="pattern.use">Учитывать узор текстуры</span></label>
+          <p class="hint" data-i18n-html="pattern.hint">Текстура растянута на несколько блоков, поэтому один и тот же
+            блок в разных местах выглядит по-разному. Конвертер знает, какая ячейка куда ляжет,
+            и подбирает цвет под неё — предпросмотр показывает то же самое.
+            <b>При дроблении узор не учитывается</b>: после сварки модулей его фазу не предсказать.</p>
+          <p class="hint" id="patternNote"></p>
           <label class="row"><span data-i18n="blocks.dedupe">Слить близкие</span>
             <input type="range" id="dedupe" min="0" max="0.05" step="0.002" value="0.012">
             <output id="dedupeOut">0.012</output></label>

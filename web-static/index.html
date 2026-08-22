@@ -107,12 +107,18 @@
         <div id="blocksBox" class="hidden">
           <p class="hint" data-i18n-html="blocks.hint">Текстура блока накладывается поверх краски и гасит её —
             отсюда приглушённые и тёмные тона, которых в палитре нет. Модель снята
-            с файлов игры, это <b>приближение среднего вида</b>: вблизи видна сама текстура.</p>
+            с файлов игры и проверена снимком из самой игры.</p>
           <div class="btnrow">
             <button type="button" class="ghost" id="blocksAll" data-i18n="blocks.all">Все</button>
             <button type="button" class="ghost" id="blocksNone" data-i18n="blocks.none">Никакие</button>
           </div>
           <div id="blockList" class="blocklist"></div>
+          <label class="check"><input type="checkbox" id="pattern" checked><span data-i18n="pattern.use">Учитывать узор текстуры</span></label>
+          <p class="hint" data-i18n-html="pattern.hint">Текстура растянута на несколько блоков, поэтому один и тот же
+            блок в разных местах выглядит по-разному. Конвертер знает, какая ячейка куда ляжет,
+            и подбирает цвет под неё — предпросмотр показывает то же самое.
+            <b>При дроблении узор не учитывается</b>: после сварки модулей его фазу не предсказать.</p>
+          <p class="hint" id="patternNote"></p>
           <label class="row"><span data-i18n="blocks.dedupe">Слить близкие</span>
             <input type="range" id="dedupe" min="0" max="0.05" step="0.002" value="0.012">
             <output id="dedupeOut">0.012</output></label>

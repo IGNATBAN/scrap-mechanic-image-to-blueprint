@@ -123,6 +123,68 @@ def check_vectors() -> None:
             wrong.append(name)
     check("квантование совпадает во всех режимах", not wrong, wrong[:4])
 
+    # ── узор блока ──────────────────────────────────────────────────────
+    over = materials.load()
+    wrong = []
+    for uuid, exp in (v.get("cells") or {}).items():
+        o = over.get(uuid)
+        if o is None or o.cells is None:
+            wrong.append(uuid)
+            continue
+        got = dig(np.round(o.cells * 1e5).astype(np.int64))
+        if got != exp["hash"] or o.n != exp["n"] or abs(o.span - exp["span"]) > 1e-3:
+            wrong.append(o.name)
+    check("таблицы ячеек не изменились", not wrong, wrong[:3])
+
+    # Среднее по ячейкам обязано совпадать с общим alpha и tint: на этом
+    # держится совместимость со старой моделью.
+    bad = []
+    for o in over.values():
+        if o.cells is None:
+            continue
+        if abs(float(o.cells[..., 0].mean()) - o.alpha) > 1e-4:
+            bad.append(o.name)
+        elif max(abs(float(o.cells[..., 1 + k].mean()) - o.tint[k]) for k in range(3)) > 1e-4:
+            bad.append(o.name)
+    check("среднее по ячейкам равно общему наложению", not bad, bad[:3])
+
+    wrong = []
+    for tag, exp in (v.get("quantizePattern") or {}).items():
+        method, coords = tag.split("@")
+        ox, oz = (int(s) for s in coords.split(","))
+        keys = quant.quantize(img, wide_pal, method, strength=1.0, lum_weight=1.0,
+                              serpentine=True, mask=mask, origin=(ox, oz))
+        if dig(keys.astype(np.int32)) != exp["hash"]:
+            wrong.append(tag)
+        elif dig(wide_pal.shown(keys, (ox, oz))) != exp["shownHash"]:
+            wrong.append(tag + " (цвет)")
+    check("подбор с узором совпадает", not wrong, wrong[:4])
+
+    exp = v.get("remap") or {}
+    ok = (wide_pal.period == exp.get("period") and len(wide_pal) == exp.get("size")
+          and dig(wide_pal.remap(1.0)) == exp.get("hash")
+          and dig(wide_pal.cells) == exp.get("cellsHash"))
+    check("таблица пересчёта по позициям совпадает", ok, f"период {wide_pal.period}")
+
+    # Фаза узора берётся из локальных координат чертежа. Если формула в
+    # origin_of разойдётся с build_json, предпросмотр будет показывать одно,
+    # а игра рисовать другое — поэтому сверяем их напрямую.
+    from core import blueprint as bp
+    bad = []
+    for orient in (bp.VERTICAL, bp.HORIZONTAL):
+        gw, gh = 37, 21
+        ox, oz = bp.origin_of(gw, gh, orient, True)
+        for (x, y) in ((0, 0), (13, 5), (36, 20)):
+            text = bp.build_json([(x, y, 1, 1, 0)], gw, gh,
+                                 bp.rgb_resolver("uuid"), orient, True, 1)
+            pos = json.loads(text)["bodies"][0]["childs"][0]["pos"]
+            want_u = x + ox
+            want_v = gh - 1 - y + oz
+            got_v = pos["z"] if orient == bp.VERTICAL else pos["y"]
+            if pos["x"] != want_u or got_v != want_v:
+                bad.append(f"{orient} ({x},{y}): {pos} против ({want_u},{want_v})")
+    check("фаза узора совпадает с координатами чертежа", not bad, bad[:2])
+
     packed = (img[..., 0].astype(np.int32) << 16) | (img[..., 1].astype(np.int32) << 8) | img[..., 2]
     pal_keys = quant.quantize(img, base_pal, "none", mask=mask).astype(np.int32)
     wrong = []

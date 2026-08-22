@@ -77,8 +77,9 @@ async function loadConfig() {
   });
 
   $('blockList').innerHTML = c.materials
-    .map((m) => `<label><input type="checkbox" value="${m.uuid}" checked>
-      <span>${m.name.replace('blk_', '')}</span>
+    .map((m) => `<label><input type="checkbox" value="${m.uuid}"${m.shiny ? '' : ' checked'}>
+      <span>${m.name.replace('blk_', '')}${m.noisy ? ` <em>${t('blocks.noisyTag')}</em>` : ''}`
+      + `${m.shiny ? ` <em>${t('blocks.shinyTag')}</em>` : ''}</span>
       <span class="keeps">${Math.round(m.keeps * 100)}%</span></label>`)
     .join('');
   $('blockList').addEventListener('change', () => schedule());
@@ -111,6 +112,23 @@ function renderPaths() {
   if (c.paletteFromGame) bits.push(t('app.paletteFromGame') + ': ' + c.palette.length);
   if (fontsOk) bits.push(t('app.fontsFromGame') + ': ' + fontsOk);
   $('paths').innerHTML = bits.join(' · ');
+}
+
+/** Что сейчас с узором: учтён, выключен дроблением, какие блоки пятнят. */
+function renderPatternNote(s) {
+  const box = $('patternNote');
+  if (!box) return;
+  const bits = [];
+  if (s.pattern && s.patternPeriod > 1) {
+    bits.push(t('pattern.on', { n: s.patternPeriod }));
+  } else {
+    // узор не учтён — тогда и стоит сказать, из-за чего будет пестрить
+    if (s.patternAsked && !s.patternShown) bits.push(t('pattern.offSplit'));
+    if (s.noisyBlocks && s.noisyBlocks.length) {
+      bits.push(t('pattern.noisy', { list: s.noisyBlocks.join(', ') }));
+    }
+  }
+  box.textContent = bits.join(' ');
 }
 
 /* ── загрузка картинки ──────────────────────────────────────────────── */
@@ -166,7 +184,8 @@ const getColorMode = segment('colorMode', (v) => {
   updateColorHint();
   schedule();
 });
-const getOrientation = segment('orientation', () => {});
+// ориентация задаёт локальные координаты, а от них зависит фаза узора
+const getOrientation = segment('orientation', () => schedule(0));
 const getAlphaMode = segment('alphaMode', (v) => {
   $('bgRow').classList.toggle('hidden', v !== 'flatten');
   $('alphaThRow').classList.toggle('hidden', v === 'flatten');
@@ -214,6 +233,11 @@ function params() {
     saturation: +$('saturation').value,
     gamma: +$('gamma').value,
     flip_h: $('flipH').checked,
+    // Узор считается по локальным координатам чертежа, а они зависят от
+    // ориентации. Сервер сам выключит его при дроблении: после сварки
+    // модулей фазу не предсказать, а неверная фаза хуже, чем никакой.
+    pattern: $('pattern').checked,
+    orientation: getOrientation(),
     merge: $('merge').checked,
     max_bound: +$('maxBound').value,
     split: $('split').checked,
@@ -258,6 +282,7 @@ async function run() {
     Viewer.setEdges(data.stats.edgesX ? { x: data.stats.edgesX.slice(1, -1), y: (data.stats.edgesY || []).slice(1, -1) } : null);
     if ($('showRects').classList.contains('on')) loadRects();
     showStats(data.stats);
+    renderPatternNote(data.stats);
     if (data.plan) renderPlan(data.plan, data.stats);
   } catch (err) {
     toast(String(err.message || err), true);
@@ -627,7 +652,7 @@ slider('lumWeight', (v) => (+v).toFixed(1));
 slider('dedupe', (v) => (+v).toFixed(3));
 ['alphaThreshold', 'maxBound', 'depth', 'target'].forEach((id) => slider(id));
 
-['resample', 'method', 'background', 'flipH', 'merge', 'serpentine', 'block']
+['resample', 'method', 'background', 'flipH', 'merge', 'serpentine', 'block', 'pattern']
   .forEach((id) => $(id).addEventListener('input', schedule));
 
 $('keepRatio').addEventListener('change', () => { syncHeight(); schedule(); });
