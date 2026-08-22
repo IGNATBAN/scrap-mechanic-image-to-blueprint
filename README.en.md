@@ -128,13 +128,51 @@ the paint as is, plastic 0.05, concrete 0.06, wood-1 0.16, wood-2 0.36,
 metal-2 0.57.
 
 What this buys in practice is exactly the muted and dark part of the spectrum
-that the paint tool palette lacks. Forty paint colours across thirty-four
-blocks, with near-duplicates filtered out, give around 635 distinguishable
+that the paint tool palette lacks. Forty paint colours across a couple of dozen
+blocks, with near-duplicates filtered out, give several hundred distinguishable
 colours, and the average error drops by roughly half.
 
-This is an approximation of a block's average look: the real renderer adds
-normal-map shading and highlights, and up close the texture itself is visible.
-That is why the mode is opt-in and always visible in the preview.
+Shiny blocks are left out of the set. The `A` channel of the `asg` file is
+reflection strength, and a block with a lot of it reflects the sky in game
+instead of showing the paint. Measured against a screenshot from the game:
+for `blk_concrete1` (reflection 0.08) the model lands within 4 of 255, for
+`blk_metal2` (0.50) it is off by +82 of 255.
+
+### 4b. Pattern: a block has more than one shade
+
+The game maps the texture **across the body of the build**, not per block: a
+texture spans exactly `tiling` blocks, and a block at local position (x, z)
+shows its own cell `(x mod tiling, z mod tiling)`. Two things follow.
+
+First: a wall of identical blocks in one paint is not a flat fill but a
+repeating pattern. The lightness spread between the darkest and the lightest
+position reaches 89 of 255 for insulation and 67 for concrete-3, while for
+concrete-1 and metal-1 it is two.
+
+Second: if you know which cell lands on which grid square, you can match colour
+more precisely. Without dithering the search runs against the right position
+directly; inside error diffusion there is no time for that, so the shared
+lookup table's answer is rewritten through a remap table built in advance —
+same speed. The error drops by 15–20 % "from afar" and 20–25 % "up close", and
+flat areas lose the plaid ripple that was never in the original.
+
+All of this rests on the pattern phase being equal to the blueprint's local
+coordinates, and that is **verified in the game itself**: a blueprint of fifteen
+16×16 fields at different offsets was built, the screenshot read back by
+machine, and all fifteen matched with no correction (0.85 against 0.21 for the
+runner-up). The same shot confirmed that merging blocks into rectangles does not
+change the pattern: a field built block by block, in rows, and as a single part
+looks identical.
+
+When the picture is split into modules the pattern is left out of matching: the
+player welds the modules, the welded body has its own coordinate system, and the
+overall shift of the pattern stays unknown. A wrong phase is worse than none —
+one block off doubles the error.
+
+The preview always shows the pattern when the phase is known, even if matching
+itself does not use it. The local version also has a mode that draws the grid at
+several pixels per block with the real texture from the game folder; the web
+version does not, because there is no game there.
 
 ### 5. Merging into scaled blocks
 
@@ -329,6 +367,7 @@ core/               the Python core
   blueprint.py      blueprint.json, description.json, archive
   paths.py          finding the installed game and the blueprints folder
   blocks.py         block catalogue
+  textures.py       block textures from the game folder (local version only)
   i18n.py           interface strings
 
 web/                local version: FastAPI and static files
@@ -350,7 +389,7 @@ tools/
 ## Checks
 
 ```bash
-py tools/verify.py              # the Python core, 103 checks
+py tools/verify.py              # the Python core, 108 checks
 node web-static/tests/node.mjs  # the same core in JavaScript against the reference
 ```
 
@@ -359,6 +398,11 @@ These cover the palette, every dithering mode, merging over eight kinds of grid
 format, pixel placement in both orientations, module splitting with a rebuild
 back into the original picture, the layout choice logic, speed and the block
 catalogue.
+
+The pattern is checked separately: the cell tables, the equality of their mean
+with the overall overlay, and — most importantly — that the pattern phase
+formula yields exactly the coordinates `build_json` writes. Were those to drift
+apart, the preview would show one thing and the game would draw another.
 
 To compare colour matching modes on your own picture:
 
