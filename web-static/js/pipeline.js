@@ -9,6 +9,7 @@ import { Palette, quantize, meanErrorRgb } from './quant.js';
 import { mergeRects, splitRects, colorKeys, stats } from './mesh.js';
 import * as tiles from './tiles.js';
 import * as bp from './blueprint.js';
+import { I18N } from './i18n.js';
 
 // Бюджет на один расчёт. Больше — интерфейс начинает подвисать, а чертёж
 // такого размера всё равно не собрать: упирается не в клетки, а в число
@@ -209,7 +210,7 @@ export function splitGrid(rects, grid, { cols = 1, rows = 1, edgesX = null, edge
 /** Собрать чертежи: один или по модулю на каждый. */
 export function makeBlueprints(grid, rects, opts) {
   const {
-    name = 'Картинка', orientation = 'vertical', depth = 1,
+    name = '', orientation = 'vertical', depth = 1,
     baseBlock = pal.DEFAULT_BLOCK, moduleList = [], onlyModule = null,
   } = opts;
 
@@ -221,7 +222,7 @@ export function makeBlueprints(grid, rects, opts) {
     return [{
       name,
       text: bp.buildJson(rects, grid.width, grid.height, resolve, orientation, true, depth),
-      note: `${grid.width}x${grid.height} блоков, ${rects.length} деталей. Сделано в SM_Pixel.`,
+      note: I18N.t('doc.blueprintNote', { w: grid.width, h: grid.height, parts: rects.length }),
       tile: null,
     }];
   }
@@ -234,8 +235,10 @@ export function makeBlueprints(grid, rects, opts) {
   return chosen.map((tile) => ({
     name: `${name} ${tile.label}`,
     text: bp.buildJson(tile.rects, tile.width, tile.height, resolve, orientation, true, depth),
-    note: `Модуль ${tile.label} из ${cols * rows}: ${tile.width}x${tile.height} блоков, `
-      + `${tile.parts} деталей. Ряды снизу, столбцы слева. Сварить с соседями.`,
+    note: I18N.t('doc.moduleNote', {
+      label: tile.label, modules: cols * rows,
+      w: tile.width, h: tile.height, parts: tile.parts,
+    }),
     tile,
   }));
 }

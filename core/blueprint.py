@@ -178,7 +178,8 @@ def _find_by_name(target_dir: str, name: str) -> str | None:
     return None
 
 
-def zip_bundle(items: list[dict], extras: dict[str, bytes | str] | None = None) -> bytes:
+def zip_bundle(items: list[dict], extras: dict[str, bytes | str] | None = None,
+               lang: str = "ru") -> bytes:
     """Архив с одним или несколькими чертежами плюс произвольные файлы рядом.
 
     items: [{"name": ..., "text": ..., "icon": bytes|None, "note": ...}, ...]
@@ -199,18 +200,21 @@ def zip_bundle(items: list[dict], extras: dict[str, bytes | str] | None = None) 
         for path, data in (extras or {}).items():
             z.writestr(path, data)
 
+        from . import i18n
+
         many = len(folders) > 1
-        z.writestr(
-            "КУДА_КЛАСТЬ.txt",
-            ("Распакуйте ВСЕ папки-чертежи (их %d) в\r\n" % len(folders) if many
-             else "Распакуйте папку %s целиком в\r\n" % folders[0])
-            + "%APPDATA%\\Axolot Games\\Scrap Mechanic\\User\\User_<ваш SteamID>\\Blueprints\\\r\n"
-            + "После этого чертежи появятся в игре в списке Blueprints.\r\n"
-            + ("\r\nПорядок сборки — в файле СБОРКА.txt, схема — в СХЕМА.png\r\n" if many else ""),
-        )
+        where = "%APPDATA%\\Axolot Games\\Scrap Mechanic\\User\\User_<SteamID>\\Blueprints\\"
+        head = (i18n.t("doc.whereMany", lang, n=len(folders)) if many
+                else i18n.t("doc.whereOne", lang))
+        note = [head, where, i18n.t("doc.whereTail", lang)]
+        if many:
+            note += ["", i18n.t("doc.whereGuide", lang)]
+        z.writestr(i18n.t("doc.whereName", lang), "\r\n".join(note) + "\r\n")
+
     return buf.getvalue()
 
 
-def zip_bytes(name: str, blueprint_text: str, icon: bytes | None, note: str = "") -> bytes:
+def zip_bytes(name: str, blueprint_text: str, icon: bytes | None, note: str = "",
+              lang: str = "ru") -> bytes:
     """Один чертёж архивом — чтобы перенести на другой компьютер."""
-    return zip_bundle([{"name": name, "text": blueprint_text, "icon": icon, "note": note}])
+    return zip_bundle([{"name": name, "text": blueprint_text, "icon": icon, "note": note}], lang=lang)

@@ -321,3 +321,16 @@ button.ghost.on { background: linear-gradient(180deg, var(--orange), var(--orang
 .warn .acts { display: inline-flex; gap: 6px; flex-wrap: wrap; margin-left: 6px; vertical-align: middle; }
 .warn .acts button { padding: 3px 8px; font-size: 10px; }
 .warn hr { border: 0; border-top: 1px solid #ffffff22; margin: 7px 0; }
+
+/* переключатель языка в шапке */
+.lang { display: flex; gap: 4px; margin-left: 12px; }
+.lang button {
+  background: linear-gradient(180deg, #2e2e2e, #232323); color: var(--dim);
+  border: 1px solid var(--line); padding: 4px 9px; cursor: pointer;
+  font: 600 11px var(--ui); letter-spacing: 1px;
+}
+.lang button:hover { color: var(--text); border-color: var(--orange-dark); }
+.lang button.on {
+  background: linear-gradient(180deg, var(--orange), var(--orange-dark));
+  color: #1a1000; border-color: #8a5a00;
+}

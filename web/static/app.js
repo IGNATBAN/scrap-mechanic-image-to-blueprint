@@ -1,7 +1,9 @@
 'use strict';
 
 const $ = (id) => document.getElementById(id);
-const num = (n) => Number(n).toLocaleString('ru-RU');
+const t = (k, v) => I18N.t(k, v);
+// разделитель разрядов по языку интерфейса: 14 385 против 14,385
+const num = (n) => Number(n).toLocaleString(I18N.lang() === 'ru' ? 'ru-RU' : 'en-US');
 
 const state = {
   cfg: null, imageId: null, srcW: 0, srcH: 0,
@@ -35,16 +37,20 @@ document.querySelectorAll('section.box > h2').forEach((h) =>
 
 /* ── конфигурация ───────────────────────────────────────────────────── */
 async function loadConfig() {
+  await I18N.load('/api/i18n');
+  I18N.apply();
+  I18N.mount($('langSwitch'));
+  I18N.onChange(() => { updateColorHint(); renderPaths(); if (state.imageId) schedule(0); });
   state.cfg = await (await fetch('/api/config')).json();
   const c = state.cfg;
 
-  $('formats').textContent = 'Форматы: ' + c.supported.join(', ');
+  $('formats').textContent = t('drop.formatsPrefix') + ' ' + c.supported.join(', ');
 
   const sel = $('block');
   let group = null;
   c.blocks.forEach((b) => {
-    const label = b.glass ? 'Стекло (полупрозрачно)'
-      : b.flat >= 3 ? 'Лучшие для картинки' : b.flat === 2 ? 'Хорошие' : 'С фактурой';
+    const label = b.glass ? t('blocks.groupGlass')
+      : b.flat >= 3 ? t('blocks.groupBest') : b.flat === 2 ? t('blocks.groupGood') : t('blocks.groupTextured');
     if (!group || group.label !== label) {
       group = document.createElement('optgroup');
       group.label = label;
@@ -76,20 +82,13 @@ async function loadConfig() {
       <span class="keeps">${Math.round(m.keeps * 100)}%</span></label>`)
     .join('');
   $('blockList').addEventListener('change', () => schedule());
-  $('blocksNote').textContent = c.materialsReady ? `(${c.materials.length} блоков)` : '(таблица не собрана)';
+  $('blocksNote').textContent = c.materialsReady ? t('blocks.count', { n: c.materials.length }) : '(таблица не собрана)';
   if (!c.materialsReady) $('useBlocks').disabled = true;
 
   $('target').value = c.target;
   $('targetOut').textContent = c.target;
 
-  const fontsOk = Object.values(c.fonts || {}).filter(Boolean).length;
-  const bits = [];
-  bits.push(c.gameDir ? '<b>игра найдена</b>' : 'игра не найдена');
-  if (c.blueprintsDir) bits.push(`чертежи: <code>…\\User_${c.steamId}\\Blueprints</code>`);
-  else bits.push('папка чертежей не найдена');
-  if (c.paletteFromGame) bits.push(`палитра из игры: ${c.palette.length}`);
-  if (fontsOk) bits.push(`шрифты игры: ${fontsOk}`);
-  $('paths').innerHTML = bits.join(' · ');
+  renderPaths();
 
   if (!c.blueprintsDir) {
     $('toGame').checked = false;
@@ -97,6 +96,21 @@ async function loadConfig() {
     $('toZip').checked = true;
   }
   updateColorHint();
+}
+
+
+/** Строка статуса в шапке: язык может смениться, поэтому рисуется отдельно. */
+function renderPaths() {
+  const c = state.cfg;
+  if (!c) return;
+  const fontsOk = Object.values(c.fonts || {}).filter(Boolean).length;
+  const bits = [];
+  bits.push(c.gameDir ? '<b>' + t('app.gameFound') + '</b>' : t('app.gameMissing'));
+  if (c.blueprintsDir) bits.push(t('app.blueprints') + `: <code>…\\User_${c.steamId}\\Blueprints</code>`);
+  else bits.push(t('app.blueprintsMissing'));
+  if (c.paletteFromGame) bits.push(t('app.paletteFromGame') + ': ' + c.palette.length);
+  if (fontsOk) bits.push(t('app.fontsFromGame') + ': ' + fontsOk);
+  $('paths').innerHTML = bits.join(' · ');
 }
 
 /* ── загрузка картинки ──────────────────────────────────────────────── */
@@ -114,11 +128,11 @@ $('file').addEventListener('change', (e) => e.target.files[0] && upload(e.target
 async function upload(file) {
   const fd = new FormData();
   fd.append('file', file);
-  drop.querySelector('b').textContent = 'Загружаю…';
+  drop.querySelector('b').textContent = t('drop.loading');
   try {
     const res = await fetch('/api/upload', { method: 'POST', body: fd });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'ошибка загрузки');
+    if (!res.ok) throw new Error(data.detail || t('err.upload'));
 
     state.imageId = data.id;
     state.srcW = data.width;
@@ -129,7 +143,7 @@ async function upload(file) {
     Viewer.setCrop(null);
 
     drop.querySelector('b').textContent = file.name;
-    drop.querySelector('span').textContent = `${data.width}×${data.height} px — можно заменить`;
+    drop.querySelector('span').textContent = `${data.width}×${data.height} ${t('drop.replace')}`;
     $('controls').classList.remove('hidden');
     $('stageEmpty').classList.add('hidden');
     if (!$('name').value) $('name').value = data.name;
@@ -141,7 +155,7 @@ async function upload(file) {
     updateCropInfo();
     schedule(0);
   } catch (err) {
-    drop.querySelector('b').textContent = 'Перетащите картинку';
+    drop.querySelector('b').textContent = t('drop.title');
     toast(String(err.message || err), true);
   }
 }
@@ -166,8 +180,8 @@ const getSplitMode = segment('splitMode', (v) => {
 
 function updateColorHint() {
   $('colorHint').innerHTML = getColorMode() === 'palette'
-    ? 'Только цвета краскопульта — постройку можно докрасить в игре руками. Подбор идёт в OKLab, а не в RGB, поэтому тона не «плывут».'
-    : 'Любой цвет из картинки. Игра рисует такие блоки без проблем — в её собственных чертежах цветов вне палитры больше, чем в ней. Но краскопультом такой оттенок не повторить.';
+    ? t('color.hintPalette')
+    : t('color.hintExact');
 }
 
 function chosenBlocks() {
@@ -230,14 +244,14 @@ async function run() {
       body: JSON.stringify(params()),
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'ошибка расчёта');
+    if (!res.ok) throw new Error(data.detail || t('err.compute'));
 
     state.gridW = data.stats.gridWidth;
     state.gridH = data.stats.gridHeight;
     state.rectsUrl = data.rects;
     if (data.palette) {
       state.palette = data.palette;
-      $('paletteInfo').textContent = `Доступно оттенков: ${data.palette.length}`;
+      $('paletteInfo').textContent = t('palette.available', { n: data.palette.length });
     }
     await Viewer.setGrid(data.image, state.gridW, state.gridH);
     Viewer.setTiles(data.stats.modules || []);
@@ -265,7 +279,7 @@ async function loadRects() {
 function showStats(s) {
   $('stats').classList.remove('hidden');
   $('stGrid').textContent = `${s.gridWidth}×${s.gridHeight}`;
-  $('stMeters').textContent = `${s.meters[0]}×${s.meters[1]} м`;
+  $('stMeters').textContent = `${s.meters[0]}×${s.meters[1]} ` + t('unit.m');
   $('stColors').textContent = num(s.colors);
   $('stMs').textContent = num(s.ms);
 
@@ -293,8 +307,8 @@ function showStats(s) {
   }
 
   $('blocksUsed').innerHTML = (s.blocksUsed || []).length > 1
-    ? 'Блоки: ' + s.blocksUsed.slice(0, 8).map((b) => `${b.title} — ${num(b.parts)}`).join(' · ')
-      + (s.blocksUsed.length > 8 ? ` и ещё ${s.blocksUsed.length - 8}` : '')
+    ? t('blocks.used') + ': ' + s.blocksUsed.slice(0, 8).map((b) => `${b.title} — ${num(b.parts)}`).join(' · ')
+      + (s.blocksUsed.length > 8 ? ' ' + t('blocks.more', { n: s.blocksUsed.length - 8 }) : '')
     : '';
 
   const warn = $('warn');
@@ -316,7 +330,7 @@ function showStats(s) {
   }
 
   if (worst >= 50000) {
-    lines.push(`<b>${num(worst)}</b> деталей ${mods.length > 1 ? 'в самом тяжёлом модуле' : 'в одном чертеже'} —
+    lines.push(`<b>${num(worst)}</b> деталей ${mods.length > 1 ? t('warn.heavyModule') : t('warn.heavyWhole')} —
       игра будет сильно тормозить.
       <span class="acts">
         <button type="button" class="ghost" data-act="split">Разбить автоматически</button>
@@ -368,7 +382,7 @@ $('warn').addEventListener('click', async (e) => {
     return;
   }
   if (act === 'estimate') {
-    btn.textContent = 'Считаю…';
+    btn.textContent = t('estimate.working');
     btn.disabled = true;
     try {
       const res = await fetch('/api/estimate', {
@@ -376,13 +390,13 @@ $('warn').addEventListener('click', async (e) => {
         body: JSON.stringify(Object.assign(params(), { width: state.srcW, keep_ratio: true })),
       });
       const d = await res.json();
-      if (!res.ok) throw new Error(d.detail || 'ошибка');
+      if (!res.ok) throw new Error(d.detail || t('err.generic'));
       showEstimate(d);
     } catch (err) {
       toast(String(err.message || err), true);
     } finally {
       btn.disabled = false;
-      btn.textContent = 'Во что обойдётся 1:1';
+      btn.textContent = t('estimate.button');
     }
   }
 });
@@ -391,7 +405,7 @@ function showEstimate(d) {
   const gb = d.bytesEstimate / 1073741824;
   $('warn').insertAdjacentHTML('beforeend', `<hr>
     <b>Оценка 1:1 (${d.requestedWidth}×${d.requestedHeight}):</b>
-    примерно <b>${num(d.parts)}</b> деталей и ${gb >= 1 ? gb.toFixed(1) + ' ГБ' : Math.round(d.bytesEstimate / 1048576) + ' МБ'} чертежа.
+    примерно <b>${num(d.parts)}</b> деталей и ${gb >= 1 ? gb.toFixed(1) + ' ' + t('unit.gb') : Math.round(d.bytesEstimate / 1048576) + ' ' + t('unit.mb')} чертежа.
     Это <b>${num(d.modules)}</b> модулей по ${num(+$('target').value)} деталей — столько папок в игре бессмысленно.<br>
     Разумные ориентиры для этой картинки:
     <span class="acts">
@@ -429,9 +443,9 @@ function renderPlan(plan, stats) {
   const sel = $('splitPreset');
   const cur = `${$('cols').value}x${$('rows').value}`;
   sel.innerHTML = plan.options.map((o) => {
-    const tag = rec && o.cols === rec.cols && o.rows === rec.rows ? ' ← рекомендую' : '';
+    const tag = rec && o.cols === rec.cols && o.rows === rec.rows ? ' ' + t('split.recommended') : '';
     const label = o.modules === 1
-      ? `Без дробления — ${num(o.totalParts)} дет.`
+      ? t('split.noSplit', { parts: num(o.totalParts) })
       : `${o.cols}×${o.rows} = ${num(o.modules)} мод. — макс ${num(o.maxParts)}${tag}`;
     return `<option value="${o.cols}x${o.rows}">${label}</option>`;
   }).join('');
@@ -461,7 +475,7 @@ function selectModule(label) {
 /* ── холст ──────────────────────────────────────────────────────────── */
 Viewer.init($('canvas'), $('stage'), {
   onZoom: (s) => ($('zoomLabel').textContent = Math.round(s * 100) + '%'),
-  onPick: (hex) => { setBrushColor(hex); toast('Цвет взят: #' + hex); },
+  onPick: (hex) => { setBrushColor(hex); toast(t('pick.taken') + ': #' + hex); },
   onModule: (tile) => tile && selectModule(tile.label),
   onCrop: (c) => { updateCropInfo(); schedule(0); },
   onStroke: async (stroke) => {
@@ -750,6 +764,7 @@ $('export').addEventListener('click', async () => {
       depth: +$('depth').value,
       to_game: $('toGame').checked,
       to_zip: $('toZip').checked,
+      lang: I18N.lang(),
       replace: $('replace').checked,
       only_module: $('onlyModule').checked ? state.selected : null,
     });

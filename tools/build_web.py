@@ -55,6 +55,18 @@ def main() -> int:
         fh.write(text)
     print("canvas.js       ->", len(text), "знаков (+ export)")
 
+    shutil.copyfile(os.path.join(ROOT, "data", "i18n.json"),
+                    os.path.join(WEB, "data", "i18n.json"))
+    print("i18n.json       ->", os.path.getsize(os.path.join(WEB, "data", "i18n.json")), "байт")
+
+    # i18n.js тоже один на обе версии
+    src = open(os.path.join(ROOT, "web", "static", "i18n.js"), encoding="utf-8").read()
+    if "export { I18N }" not in src:
+        src += chr(10) + "export { I18N };" + chr(10)
+    with open(os.path.join(WEB, "js", "i18n.js"), "w", encoding="utf-8") as fh:
+        fh.write(src)
+    print("i18n.js         ->", len(src), "знаков (+ export)")
+
     vec = os.path.join(ROOT, "tests", "vectors.json")
     if os.path.isfile(vec):
         dst = os.path.join(WEB, "tests", "vectors.json")

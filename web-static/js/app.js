@@ -8,9 +8,13 @@ import * as tiles from './tiles.js';
 import { descriptionJson, uuid4 } from './blueprint.js';
 import { makeZip, download } from './zip.js';
 import { Viewer } from './canvas.js';
+import { I18N } from './i18n.js';
+
+const t = (k, v) => I18N.t(k, v);
 
 const $ = (id) => document.getElementById(id);
-const num = (n) => Number(n).toLocaleString('ru-RU');
+// разделитель разрядов по языку интерфейса: 14 385 против 14,385
+const num = (n) => Number(n).toLocaleString(I18N.lang() === 'ru' ? 'ru-RU' : 'en-US');
 
 const state = {
   source: null, grid: null, rects: null, modules: [], plan: null,
@@ -51,7 +55,10 @@ document.querySelectorAll('section.box > h2').forEach((h) =>
 /* ── запуск ─────────────────────────────────────────────────────────── */
 
 async function boot() {
-  await Promise.all([pal.loadMaterials(), loadBlueNoise()]);
+  await Promise.all([pal.loadMaterials(), loadBlueNoise(), I18N.load('data/i18n.json')]);
+  I18N.apply();
+  I18N.mount($('langSwitch'));
+  I18N.onChange(() => { refreshDynamic(); if (state.grid) schedule(0); });
 
   $('method').innerHTML = Object.entries(METHODS)
     .map(([id, title]) => `<option value="${id}"${id === 'fs' ? ' selected' : ''}>${title}</option>`)
@@ -69,7 +76,7 @@ async function boot() {
     <span>${m.name.replace('blk_', '')}</span>
     <span class="keeps">${Math.round((1 - m.alpha) * 100)}%</span></label>`).join('');
   $('blockList').addEventListener('change', () => schedule());
-  $('blocksNote').textContent = `(${usable.length} блоков)`;
+  $('blocksNote').textContent = t('blocks.count', { n: usable.length });
 
   // блок-основа: показываем те же, что и в скачиваемой версии
   const all = [...pal.materials().values()].filter((o) => o.alpha <= 0.9);
@@ -107,7 +114,7 @@ drop.addEventListener('drop', (e) => {
 $('file').addEventListener('change', (e) => e.target.files[0] && openFile(e.target.files[0]));
 
 async function openFile(file) {
-  drop.querySelector('b').textContent = 'Читаю…';
+  drop.querySelector('b').textContent = t('drop.reading');
   try {
     state.source = await pipeline.img.loadImage(file);
     state.edits = [];
@@ -120,9 +127,9 @@ async function openFile(file) {
     state.originalUrl = URL.createObjectURL(file);
     Viewer.setOriginal(state.originalUrl, state.source.width, state.source.height);
 
-    state.fileName = file.name.replace(/\.[^.]+$/, '').slice(0, 60) || 'Картинка';
+    state.fileName = file.name.replace(/\.[^.]+$/, '').slice(0, 60) || t('doc.defaultName');
     drop.querySelector('b').textContent = file.name;
-    drop.querySelector('span').textContent = `${state.source.width}×${state.source.height} px — можно заменить`;
+    drop.querySelector('span').textContent = `${state.source.width}×${state.source.height} ${t('drop.replace')}`;
     $('controls').classList.remove('hidden');
     $('stageEmpty').classList.add('hidden');
     if (!$('name').value) $('name').value = state.fileName;
@@ -134,8 +141,8 @@ async function openFile(file) {
     updateCropInfo();
     schedule(0);
   } catch (err) {
-    drop.querySelector('b').textContent = 'Перетащите картинку';
-    toast('Не удалось прочитать картинку: ' + (err.message || err), true);
+    drop.querySelector('b').textContent = t('drop.title');
+    toast(t('err.readImage') + ': ' + (err.message || err), true);
   }
 }
 
@@ -171,8 +178,8 @@ segment('preset', (v) => {
 
 function updateColorHint() {
   $('colorHint').innerHTML = getColorMode() === 'palette'
-    ? 'Только цвета краскопульта — постройку можно докрасить в игре руками. Подбор идёт в OKLab, а не в RGB, поэтому тона не «плывут».'
-    : 'Любой цвет из картинки. Игра рисует такие блоки без проблем — в её собственных чертежах цветов вне палитры больше, чем в ней. Но краскопультом такой оттенок не повторить.';
+    ? t('color.hintPalette')
+    : t('color.hintExact');
 }
 
 function chosenBlocks() {
@@ -259,7 +266,7 @@ function run() {
       showStats(grid, summary, modules, Math.round(performance.now() - t0));
       renderPlan(planned, summary, modules);
     } catch (err) {
-      toast('Ошибка расчёта: ' + (err.message || err), true);
+      toast(t('err.compute') + ': ' + (err.message || err), true);
       console.error(err);
     } finally {
       state.busy = false;
@@ -335,7 +342,7 @@ function showStats(grid, s, modules, ms) {
     }
   }
   $('blocksUsed').innerHTML = used.size > 1
-    ? 'Блоки: ' + [...used.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8)
+    ? t('blocks.used') + ': ' + [...used.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8)
       .map(([u, n]) => `${(pal.materials().get(u) || { name: u }).name.replace('blk_', '')} — ${num(n)}`).join(' · ')
     : '';
 
@@ -345,23 +352,23 @@ function showStats(grid, s, modules, ms) {
 
   if (grid.clamped) {
     const c = grid.clamped;
-    lines.push(`<b>Показано в уменьшенном виде.</b> Вы запросили
-      ${c.requestedWidth}×${c.requestedHeight} = ${num(c.requestedCells)} блоков — столько за раз
-      не посчитать в браузере. Считаю на ширине <b>${c.usedWidth}</b>.
-      <span class="acts">
-        <button type="button" class="ghost" data-act="clamp" data-w="${c.usedWidth}">Зафиксировать ${c.usedWidth}</button>
-      </span>`);
+    lines.push(t('warn.clamped', {
+      w: c.requestedWidth, h: c.requestedHeight, cells: num(c.requestedCells), used: c.usedWidth,
+    }) + `<span class="acts">
+        <button type="button" class="ghost" data-act="clamp" data-w="${c.usedWidth}">`
+      + t('warn.clampFix', { w: c.usedWidth }) + '</button></span>');
   }
   if (worst >= 50000) {
-    lines.push(`<b>${num(worst)}</b> деталей ${modules.length > 1 ? 'в самом тяжёлом модуле' : 'в одном чертеже'} —
-      игра будет сильно тормозить.
-      <span class="acts">
-        <button type="button" class="ghost" data-act="split">Разбить автоматически</button>
-        <button type="button" class="ghost" data-act="blocks">Включить разные блоки</button>
+    lines.push(t('warn.heavy', {
+      parts: num(worst),
+      where: t(modules.length > 1 ? 'warn.heavyModule' : 'warn.heavyWhole'),
+    }) + `<span class="acts">
+        <button type="button" class="ghost" data-act="split">${t('warn.autoSplit')}</button>
+        <button type="button" class="ghost" data-act="blocks">${t('warn.enableBlocks')}</button>
       </span>`);
   } else if (worst >= 10000) {
-    lines.push(`<b>${num(worst)}</b> деталей — построится, но тяжеловато. Комфортный потолок около 10 000.
-      <span class="acts"><button type="button" class="ghost" data-act="split">Разбить автоматически</button></span>`);
+    lines.push(t('warn.mid', { parts: num(worst) })
+      + `<span class="acts"><button type="button" class="ghost" data-act="split">${t('warn.autoSplit')}</button></span>`);
   }
 
   warn.className = lines.length ? 'warn ' + (grid.clamped || worst >= 50000 ? 'bad' : 'mid') : 'warn hidden';
@@ -407,27 +414,30 @@ function renderPlan(plan, summary, modules) {
 
   if (!rec || (rec.cols === 1 && rec.rows === 1)) {
     advice.className = 'advice';
-    advice.innerHTML = `Картинка помещается в <b>один чертёж</b>: ${num(whole)} деталей,
-      это ниже потолка ${num(target)}. Разбивать не нужно.`;
+    advice.innerHTML = t('split.fitsOne', { parts: num(whole), target: num(target) });
   } else {
     const o = plan.options.find((x) => x.cols === rec.cols && x.rows === rec.rows);
     const fits = o.maxParts <= target;
     advice.className = 'advice' + (fits ? '' : ' over');
     advice.innerHTML = fits
-      ? `Целиком выходит ${num(whole)} деталей — многовато.
-         Рекомендую <b>${rec.cols}×${rec.rows} = ${o.modules} модулей</b>:
-         самый тяжёлый ${num(o.maxParts)}, модуль ${o.tileWidth}×${o.tileHeight} блоков.`
-      : `Даже при ${rec.cols}×${rec.rows} самый тяжёлый модуль ${num(o.maxParts)} деталей —
-         выше потолка ${num(target)}. Уменьшите ширину или поднимите потолок.`;
+      ? t('split.recommend', {
+        parts: num(whole), cols: rec.cols, rows: rec.rows, modules: o.modules,
+        max: num(o.maxParts), tw: o.tileWidth, th: o.tileHeight,
+      })
+      : t('split.tooHeavy', {
+        cols: rec.cols, rows: rec.rows, max: num(o.maxParts), target: num(target),
+      });
   }
 
   const sel = $('splitPreset');
   const cur = `${$('cols').value}x${$('rows').value}`;
   sel.innerHTML = plan.options.map((o) => {
-    const tag = rec && o.cols === rec.cols && o.rows === rec.rows ? ' ← рекомендую' : '';
+    const tag = rec && o.cols === rec.cols && o.rows === rec.rows ? ' ' + t('split.recommended') : '';
     const label = o.modules === 1
-      ? `Без разбивки — ${num(o.totalParts)} дет.`
-      : `${o.cols}×${o.rows} = ${o.modules} мод. — макс ${num(o.maxParts)} дет.${tag}`;
+      ? t('split.noSplit', { parts: num(o.totalParts) })
+      : t('split.option', {
+        cols: o.cols, rows: o.rows, modules: o.modules, max: num(o.maxParts),
+      }) + tag;
     return `<option value="${o.cols}x${o.rows}">${label}</option>`;
   }).join('');
   if (plan.options.some((o) => `${o.cols}x${o.rows}` === cur)) sel.value = cur;
@@ -463,7 +473,7 @@ document.querySelectorAll('[data-tool]').forEach((btn) => {
 $('cropBtn').addEventListener('click', () => {
   document.querySelectorAll('[data-tool]').forEach((b) => b.classList.remove('on'));
   Viewer.setTool('crop');
-  toast('Выделите рамкой нужную часть картинки');
+  toast(t('size.cropHint'));
 });
 $('cropReset').addEventListener('click', () => {
   Viewer.setCrop(null);
@@ -474,8 +484,10 @@ $('cropReset').addEventListener('click', () => {
 function updateCropInfo() {
   const c = Viewer.crop();
   $('cropInfo').textContent = c
-    ? `кадр ${Math.round(c.w)}×${Math.round(c.h)} из ${state.source.width}×${state.source.height}`
-    : (state.source ? `весь кадр ${state.source.width}×${state.source.height}` : '');
+    ? t('size.cropped', {
+      w: Math.round(c.w), h: Math.round(c.h), sw: state.source.width, sh: state.source.height,
+    })
+    : (state.source ? t('size.whole', { w: state.source.width, h: state.source.height }) : '');
 }
 
 $('zoomIn').addEventListener('click', () => Viewer.zoom(1.25));
@@ -493,20 +505,20 @@ $('showRects').addEventListener('click', (e) => {
 function setBrushColor(hex) {
   Viewer.setBrush(hex);
   [...$('swatches').children].forEach((el) => el.classList.toggle('on', el.dataset.hex === hex));
-  $('brushSizeLabel').textContent = `кисть ${Viewer.brush().size} · #${hex}`;
+  $('brushSizeLabel').textContent = t('tool.brushSize', { n: Viewer.brush().size }) + ` · #${hex}`;
 }
 
 window.addEventListener('keydown', (e) => {
   if (e.target.matches('input, select, textarea')) return;
   if (e.key === '[' || e.key === ']') {
     const b = Viewer.setBrush(null, Viewer.brush().size + (e.key === ']' ? 1 : -1));
-    $('brushSizeLabel').textContent = `кисть ${b.size} · #${b.color}`;
+    $('brushSizeLabel').textContent = t('tool.brushSize', { n: b.size }) + ` · #${b.color}`;
   }
 });
 
 $('undo').addEventListener('click', () => {
   const last = state.strokes.pop();
-  if (!last) { toast('Отменять нечего'); return; }
+  if (!last) { toast(t('tool.nothingToUndo')); return; }
   state.edits.length = Math.max(0, state.edits.length - last.length);
   schedule(0);
 });
@@ -593,7 +605,7 @@ $('one2one').addEventListener('click', () => {
   const src = Viewer.crop() || { w: state.source.width };
   const max = +$('widthNum').max;
   const w = Math.min(max, Math.round(src.w));
-  if (w < src.w) toast(`Ограничил ширину ${max} блоками — оригинал ${Math.round(src.w)} px`);
+  if (w < src.w) toast(t('size.limited', { max, src: Math.round(src.w) }));
   $('keepRatio').checked = true;
   $('widthNum').value = w;
   $('width').value = Math.min(+$('width').max, w);
@@ -603,9 +615,26 @@ $('one2one').addEventListener('click', () => {
 
 function updateOneHint() {
   $('oneHint').textContent = state.source
-    ? `оригинал ${state.source.width}×${state.source.height} px = ${num(state.source.width * state.source.height)} блоков`
+    ? t('size.original', {
+      w: state.source.width, h: state.source.height,
+      cells: num(state.source.width * state.source.height),
+    })
     : '';
 }
+
+/** Перерисовать то, что подставляется из кода, а не из разметки. */
+function refreshDynamic() {
+  updateColorHint();
+  updateOneHint();
+  updateCropInfo();
+  const usable = pal.usableBlocks();
+  $('blocksNote').textContent = t('blocks.count', { n: usable.length });
+  $('export').textContent = t('export.button');
+  const b = Viewer.brush();
+  $('brushSizeLabel').textContent = t('tool.brushSize', { n: b.size }) + ` · #${b.color}`;
+}
+
+const CRLF = String.fromCharCode(13, 10);
 
 /* ── сборка ZIP ─────────────────────────────────────────────────────── */
 
@@ -613,9 +642,9 @@ $('export').addEventListener('click', async () => {
   if (!state.grid) return;
   const btn = $('export');
   btn.disabled = true;
-  btn.textContent = 'Собираю…';
+  btn.textContent = t('export.working');
   try {
-    const name = ($('name').value.trim() || state.fileName || 'Картинка').slice(0, 60);
+    const name = ($('name').value.trim() || state.fileName || t('doc.defaultName')).slice(0, 60);
     const onlyModule = $('onlyModule').checked ? state.selected : null;
     const items = pipeline.makeBlueprints(state.grid, state.rects, {
       name,
@@ -637,12 +666,11 @@ $('export').addEventListener('click', async () => {
 
     const many = items.length > 1;
     files.push({
-      name: 'КУДА_КЛАСТЬ.txt',
-      data: (many ? `Распакуйте ВСЕ папки-чертежи (их ${items.length}) в\r\n`
-        : 'Распакуйте папку целиком в\r\n')
-        + '%APPDATA%\\Axolot Games\\Scrap Mechanic\\User\\User_<ваш SteamID>\\Blueprints\\\r\n'
-        + 'После этого чертежи появятся в игре в списке Blueprints.\r\n'
-        + (many ? '\r\nПорядок сборки — в файле СБОРКА.txt, схема — в СХЕМА.png\r\n' : ''),
+      name: t('doc.whereName'),
+      data: (many ? t('doc.whereMany', { n: items.length }) : t('doc.whereOne')) + CRLF
+        + '%APPDATA%\\Axolot Games\\Scrap Mechanic\\User\\User_<SteamID>\\Blueprints\\' + CRLF
+        + t('doc.whereTail') + CRLF
+        + (many ? CRLF + t('doc.whereGuide') + CRLF : ''),
     });
 
     let guide = '';
@@ -650,28 +678,29 @@ $('export').addEventListener('click', async () => {
       const rows = Math.max(...state.modules.map((t) => t.row)) + 1;
       const cols = Math.max(...state.modules.map((t) => t.col)) + 1;
       const counts = [...state.modules].sort((a, b) => (a.row - b.row) || (a.col - b.col)).map((t) => t.parts);
-      guide = tiles.instructions(name, cols, rows, counts, getOrientation());
-      files.push({ name: 'СБОРКА.txt', data: guide });
+      guide = tiles.instructions(name, cols, rows, counts, getOrientation(), I18N.lang());
+      files.push({ name: t('doc.assemblyName'), data: guide });
       const map = await assemblyMap(name, cols, rows);
-      if (map) files.push({ name: 'СХЕМА.png', data: map });
+      if (map) files.push({ name: t('doc.mapName'), data: map });
     }
 
     const blob = await makeZip(files);
     download(blob, `${name}.zip`);
 
     const bytes = items.reduce((n, i) => n + i.text.length, 0);
-    $('exportResult').innerHTML = `Готово: <b>${num(items.reduce((n, i) => n + 1, 0))}</b> `
-      + `${many ? 'чертежей' : 'чертёж'}, ${(bytes / 1048576).toFixed(2)} МБ до сжатия.<br>`
-      + `Архив скачан — распакуйте папки в <code>…\\User_&lt;SteamID&gt;\\Blueprints\\</code>`;
+    $('exportResult').innerHTML =
+      t(many ? 'export.doneMany' : 'export.doneOne', { n: items.length, mb: (bytes / 1048576).toFixed(2) })
+      + '<br>' + t('export.unpack')
+      + ' <code>…\\User_&lt;SteamID&gt;\\Blueprints\\</code>';
     $('guide').classList.toggle('hidden', !guide);
     $('guide').textContent = guide;
-    toast(many ? `Собрано ${items.length} модулей` : 'Чертёж собран');
+    toast(many ? t('export.builtModules', { n: items.length }) : t('export.builtOne'));
   } catch (err) {
-    toast('Не собралось: ' + (err.message || err), true);
+    toast(t('export.failed') + ': ' + (err.message || err), true);
     console.error(err);
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Собрать ZIP';
+    btn.textContent = t('export.button');
   }
 });
 
@@ -746,13 +775,14 @@ async function assemblyMap(name, cols, rows) {
   ctx.textAlign = 'left';
   ctx.fillStyle = '#f0f4fa';
   ctx.font = '600 20px sans-serif';
-  ctx.fillText(`Схема сборки «${name}»`, pad, 26);
+  ctx.fillText(t('doc.mapTitle', { name }), pad, 26);
   ctx.fillStyle = '#96a2b3';
   ctx.font = '14px sans-serif';
   const total = state.modules.reduce((n, t) => n + t.parts, 0);
   const worst = Math.max(...state.modules.map((t) => t.parts));
-  ctx.fillText(`${g.width}×${g.height} блоков · ${cols}×${rows} = ${cols * rows} модулей · `
-    + `${total} деталей · самый тяжёлый ${worst}`, pad, cv.height - foot + 16);
+  ctx.fillText(t('doc.mapNote', {
+    w: g.width, h: g.height, cols, rows, modules: cols * rows, parts: total, max: worst,
+  }), pad, cv.height - foot + 16);
 
   return canvasBytes(cv);
 }
@@ -762,4 +792,4 @@ async function canvasBytes(canvas) {
   return blob ? new Uint8Array(await blob.arrayBuffer()) : null;
 }
 
-boot().catch((e) => toast('Не удалось запустить: ' + e.message, true));
+boot().catch((e) => toast('Could not start: ' + e.message, true));

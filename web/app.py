@@ -12,7 +12,8 @@ from fastapi import FastAPI, HTTPException, Request, UploadFile, File
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from core import blocks, blueprint, imageproc, materials, mesh, palette, paths, quant, tiles
+from core import (blocks, blueprint, i18n, imageproc, materials, mesh, palette, paths,
+                  quant, tiles)
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 
@@ -236,8 +237,16 @@ def config() -> JSONResponse:
             "supported": imageproc.SUPPORTED,
             "maxCells": MAX_CELLS,
             "target": tiles.TARGET_PARTS,
+            "languages": i18n.languages(),
         }
     )
+
+
+@app.get("/api/i18n")
+def i18n_table() -> FileResponse:
+    """Словарь интерфейса. Тот же файл читает веб-версия и Python-ядро."""
+    path = os.path.join(os.path.dirname(STATIC_DIR), "..", "data", "i18n.json")
+    return FileResponse(os.path.normpath(path), media_type="application/json")
 
 
 @app.get("/api/font/{name}")
@@ -472,7 +481,8 @@ async def export(request: Request) -> JSONResponse:
     resolve = _resolver(grid, base_block)
     orientation = blueprint.HORIZONTAL if body.get("orientation") == "horizontal" else blueprint.VERTICAL
     depth = int(_num(body, "depth", 1, 1, 16, int))
-    name = str(body.get("name") or entry["name"])[:60].strip() or "Картинка"
+    lang = i18n.normalize(body.get("lang"))
+    name = str(body.get("name") or entry["name"])[:60].strip() or i18n.t("doc.defaultName", lang)
 
     cols, rows, ex, ey = _split_params(body, grid.width, grid.height, entry)
     tile_list = tiles.cut(rects, grid.width, grid.height, cols, rows, ex, ey) if cols * rows > 1 else []
@@ -496,9 +506,9 @@ async def export(request: Request) -> JSONResponse:
                                                  resolve, orientation, True, depth),
                     "icon": imageproc.icon_png(
                         imageproc.sub_grid(grid, tile.x0, tile.y0, tile.width, tile.height)),
-                    "note": (f"Модуль {tile.label(rows, cols)} из {cols * rows}: "
-                             f"{tile.width}x{tile.height} блоков, {tile.parts} деталей. "
-                             f"Ряды снизу, столбцы слева. Сварить с соседями."),
+                    "note": i18n.t("doc.moduleNote", lang, label=tile.label(rows, cols),
+                                   modules=cols * rows, w=tile.width, h=tile.height,
+                                   parts=tile.parts),
                 }
             )
     else:
@@ -508,7 +518,8 @@ async def export(request: Request) -> JSONResponse:
                 "text": blueprint.build_json(rects, grid.width, grid.height,
                                              resolve, orientation, True, depth),
                 "icon": imageproc.icon_png(grid),
-                "note": f"{grid.width}x{grid.height} блоков, {len(rects)} деталей. Сделано в SM_Pixel.",
+                "note": i18n.t("doc.blueprintNote", lang, w=grid.width, h=grid.height,
+                                parts=len(rects)),
             }
         )
 
@@ -521,12 +532,13 @@ async def export(request: Request) -> JSONResponse:
         ordered = sorted(tile_list, key=lambda t: t.order)
         overlay = [t.as_dict(rows, cols) for t in ordered]
         counts = [t.parts for t in sorted(tile_list, key=lambda t: (t.row, t.col))]
-        guide = tiles.instructions(name, cols, rows, counts, orientation)
-        note = (f"{grid.width}×{grid.height} блоков · {cols}×{rows} = {cols * rows} модулей · "
-                f"{total_parts} деталей · самый тяжёлый модуль {max(counts)}")
-        map_png = imageproc.assembly_map_png(grid, overlay, f"Схема сборки «{name}»", note)
-        extras["СБОРКА.txt"] = guide
-        extras["СХЕМА.png"] = map_png
+        guide = tiles.instructions(name, cols, rows, counts, orientation, lang)
+        note = i18n.t("doc.mapNote", lang, w=grid.width, h=grid.height, cols=cols, rows=rows,
+                      modules=cols * rows, parts=total_parts, max=max(counts))
+        map_png = imageproc.assembly_map_png(
+            grid, overlay, i18n.t("doc.mapTitle", lang, name=name), note)
+        extras[i18n.t("doc.assemblyName", lang)] = guide
+        extras[i18n.t("doc.mapName", lang)] = map_png
         result["guide"] = guide
         result["moduleNames"] = [i["name"] for i in items]
 
@@ -534,6 +546,7 @@ async def export(request: Request) -> JSONResponse:
         _downloads[token] = {"data": map_png, "name": f"{name} — схема.png",
                              "type": "image/png", "ts": time.time()}
         result["map"] = f"/api/download/{token}"
+        result["mapName"] = i18n.t("doc.mapName", lang)
         result["mapPng"] = "data:image/png;base64," + base64.b64encode(map_png).decode()
 
     if body.get("to_game"):
@@ -549,7 +562,7 @@ async def export(request: Request) -> JSONResponse:
 
     if body.get("to_zip"):
         token = uuidlib.uuid4().hex
-        _downloads[token] = {"data": blueprint.zip_bundle(items, extras), "name": f"{name}.zip",
+        _downloads[token] = {"data": blueprint.zip_bundle(items, extras, lang), "name": f"{name}.zip",
                              "type": "application/zip", "ts": time.time()}
         result["download"] = f"/api/download/{token}"
 
@@ -572,6 +585,20 @@ def download(token: str) -> Response:
         media_type=media,
         headers={"Content-Disposition": f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quoted}"},
     )
+
+
+@app.middleware("http")
+async def no_stale_static(request: Request, call_next):
+    """Заставить браузер проверять свежесть статики.
+
+    Файлы отдаются с диска, поэтому проверка бесплатна, а без неё после
+    обновления программы браузер продолжает крутить старый app.js — и это
+    выглядит как поломка на ровном месте.
+    """
+    response = await call_next(request)
+    if request.url.path.startswith("/static"):
+        response.headers["Cache-Control"] = "no-cache, must-revalidate"
+    return response
 
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

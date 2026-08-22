@@ -309,41 +309,36 @@ def plan(
     }
 
 
-def instructions(name: str, cols: int, rows: int, counts: list[int], orientation: str) -> str:
-    """Памятка по сборке — на основе того, что пишет сама игра о сварке."""
+def instructions(name: str, cols: int, rows: int, counts, orientation: str, lang: str = "ru") -> str:
+    """Памятка по сборке — на основе того, что пишет о сварке сама игра.
+
+    Строки берутся из data/i18n.json, поэтому русская и английская версии
+    памятки не расходятся с интерфейсом.
+    """
+    from . import i18n
+
     total = sum(counts)
     vertical = orientation != "horizontal"
-    step3 = (
-        "3. Ставьте соседние модули вплотную, ряд за рядом: сначала весь нижний\r\n"
-        "   ряд слева направо, потом следующий — и так вверх."
-        if vertical
-        else "3. Ставьте соседние модули вплотную, ряд за рядом: сначала ближний\r\n"
-        "   ряд слева направо, потом следующий — и так от себя."
-    )
     lines = [
-        f"СБОРКА «{name}» — {cols}×{rows} = {cols * rows} модулей, {total} деталей всего",
+        i18n.t("asm.header", lang, name=name, cols=cols, rows=rows,
+               modules=cols * rows, parts=total),
         "",
-        "Модули названы «ряд-столбец»: ряды считаются СНИЗУ, столбцы — слева направо.",
-        f"1-1 — левый нижний угол картинки, {rows}-{cols} — правый верхний.",
+        i18n.t("asm.naming", lang),
+        i18n.t("asm.corners", lang, rows=rows, cols=cols),
         "",
-        "ПОРЯДОК:",
-        "1. Возьмите сварочный аппарат (Weld Tool).",
-        "2. Поставьте подъёмник и разместите на нём модуль 1-1.",
-        step3,
-        "4. Соединяйте сварочным аппаратом: наведите на одну несоединённую конструкцию,",
-        "   ЛКМ, затем на соседнюю — ЛКМ. Игра пишет об этом так:",
-        "   «Также можно соединять соприкасающиеся детали, которые находятся на подъёмнике».",
-        "   То есть на подъёмнике стыковка проще всего — собирайте там.",
+        i18n.t("asm.orderTitle", lang),
+        i18n.t("asm.step1", lang),
+        i18n.t("asm.step2", lang),
+        i18n.t("asm.step3v" if vertical else "asm.step3h", lang),
+        i18n.t("asm.step4", lang),
         "",
-        "РАЗМЕР МОДУЛЕЙ (деталей):",
+        i18n.t("asm.sizes", lang),
     ]
+
     for r in range(rows, 0, -1):
         row_counts = counts[(rows - r) * cols:(rows - r + 1) * cols]
-        lines.append("  ряд %d:  %s" % (r, "   ".join(f"{r}-{c + 1}: {n}" for c, n in enumerate(row_counts))))
-    lines += [
-        "",
-        "Стыки ровные, внахлёст ставить не нужно — модули граничат встык.",
-        "Если какой-то модуль не грузится — он слишком тяжёлый: пересоберите с",
-        "большим числом модулей или меньшей шириной картинки.",
-    ]
+        listing = "   ".join(f"{r}-{c + 1}: {n}" for c, n in enumerate(row_counts))
+        lines.append(i18n.t("asm.row", lang, r=r, list=listing))
+
+    lines += ["", i18n.t("asm.tail", lang)]
     return "\r\n".join(lines)

@@ -5,6 +5,8 @@
 // границам модулей. Поэтому сумма модулей даёт ровно ту же картинку, что и
 // цельный чертёж, а число деталей в каждом известно заранее.
 
+import { I18N } from './i18n.js';
+
 export const TARGET_PARTS = 8000;
 export const LIST_LIMIT = 48;
 
@@ -247,42 +249,36 @@ function score(o) {
   return o.modules * (1 + 0.35 * (o.skew - 1));
 }
 
-/** Памятка по сборке — на основе того, что пишет о сварке сама игра. */
-export function instructions(name, cols, rows, counts, orientation) {
+/** Памятка по сборке. Строки берутся из общего словаря — те же, что в Python. */
+export function instructions(name, cols, rows, counts, orientation, lang) {
+  const t = (k, v) => I18N.t(k, v);
+  if (lang) I18N.set(lang);
   const total = counts.reduce((a, b) => a + b, 0);
   const vertical = orientation !== 'horizontal';
-  const step3 = vertical
-    ? '3. Ставьте соседние модули вплотную, ряд за рядом: сначала весь нижний\r\n   ряд слева направо, потом следующий — и так вверх.'
-    : '3. Ставьте соседние модули вплотную, ряд за рядом: сначала ближний\r\n   ряд слева направо, потом следующий — и так от себя.';
+  const CRLF = String.fromCharCode(13, 10);
 
   const lines = [
-    `СБОРКА «${name}» — ${cols}×${rows} = ${cols * rows} модулей, ${total} деталей всего`,
+    t('asm.header', { name, cols, rows, modules: cols * rows, parts: total }),
     '',
-    'Модули названы «ряд-столбец»: ряды считаются СНИЗУ, столбцы — слева направо.',
-    `1-1 — левый нижний угол картинки, ${rows}-${cols} — правый верхний.`,
+    t('asm.naming'),
+    t('asm.corners', { rows, cols }),
     '',
-    'ПОРЯДОК:',
-    '1. Возьмите сварочный аппарат (Weld Tool).',
-    '2. Поставьте подъёмник и разместите на нём модуль 1-1.',
-    step3,
-    '4. Соединяйте сварочным аппаратом: наведите на одну несоединённую конструкцию,',
-    '   ЛКМ, затем на соседнюю — ЛКМ. Игра пишет об этом так:',
-    '   «Также можно соединять соприкасающиеся детали, которые находятся на подъёмнике».',
-    '   То есть на подъёмнике стыковка проще всего — собирайте там.',
+    t('asm.orderTitle'),
+    t('asm.step1'),
+    t('asm.step2'),
+    t(vertical ? 'asm.step3v' : 'asm.step3h'),
+    t('asm.step4'),
     '',
-    'РАЗМЕР МОДУЛЕЙ (деталей):',
+    t('asm.sizes'),
   ];
 
   for (let r = rows; r >= 1; r--) {
     const rowCounts = counts.slice((rows - r) * cols, (rows - r + 1) * cols);
-    lines.push(`  ряд ${r}:  ` + rowCounts.map((n, c) => `${r}-${c + 1}: ${n}`).join('   '));
+    lines.push(t('asm.row', {
+      r, list: rowCounts.map((n, c) => `${r}-${c + 1}: ${n}`).join('   '),
+    }));
   }
 
-  lines.push(
-    '',
-    'Стыки ровные, внахлёст ставить не нужно — модули граничат встык.',
-    'Если какой-то модуль не грузится — он слишком тяжёлый: пересоберите с',
-    'большим числом модулей или меньшей шириной картинки.',
-  );
-  return lines.join('\r\n');
+  lines.push('', t('asm.tail'));
+  return lines.join(CRLF);
 }
