@@ -79,22 +79,30 @@ export function materials() {
   return overlays || new Map();
 }
 
-/** Насколько блок пятнистый: разброс светлоты по позициям, 0..255. */
+/**
+ * Насколько блок пятнистый: разброс светлоты по позициям, 0..255.
+ * Проб три, берётся худшая: текстура, которая гасит, видна на белой краске,
+ * а со светлым собственным тоном (гипсокартон) — наоборот, на тёмной.
+ */
 export function overlaySpan(overlay) {
   if (!overlay.cells) return 0;
   const { n, a, tint } = overlay.cells;
-  const one = srgbToLinear(255);
-  let lo = Infinity, hi = -Infinity;
-  for (let i = 0; i < n * n; i++) {
-    const keep = 1 - a[i];
-    const r = linearToByte(one * keep + tint[i * 3]) / 255;
-    const g = linearToByte(one * keep + tint[i * 3 + 1]) / 255;
-    const b = linearToByte(one * keep + tint[i * 3 + 2]) / 255;
-    const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-    if (lum < lo) lo = lum;
-    if (lum > hi) hi = lum;
+  let worst = 0;
+  for (const probe of [238, 127, 34]) {
+    const lin = srgbToLinear(probe);
+    let lo = Infinity, hi = -Infinity;
+    for (let i = 0; i < n * n; i++) {
+      const keep = 1 - a[i];
+      const r = linearToByte(lin * keep + tint[i * 3]) / 255;
+      const g = linearToByte(lin * keep + tint[i * 3 + 1]) / 255;
+      const b = linearToByte(lin * keep + tint[i * 3 + 2]) / 255;
+      const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      if (lum < lo) lo = lum;
+      if (lum > hi) hi = lum;
+    }
+    if ((hi - lo) * 255 > worst) worst = (hi - lo) * 255;
   }
-  return (hi - lo) * 255;
+  return worst;
 }
 
 export function isNoisy(overlay) {

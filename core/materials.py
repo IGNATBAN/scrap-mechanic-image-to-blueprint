@@ -88,15 +88,19 @@ class Overlay:
     def span(self) -> float:
         """Насколько блок пятнистый: разброс светлоты по позициям, 0..255.
 
-        Меряется на белой краске — текстура краску гасит, значит на самой
-        светлой разница между позициями наибольшая.
+        Мерить на одной краске мало: текстура, которая гасит, ярче всего
+        видна на белой, а текстура со светлым собственным тоном (гипсокартон)
+        на белой пропадает и вылезает на тёмной. Поэтому берём худший случай
+        из трёх проб. Светлота — по sRGB: пятнистость это про глаз, а не
+        про физику.
         """
         if self.cells is None:
             return 0.0
-        white = np.array([[255, 255, 255]], dtype=np.uint8)
-        shown = quant.srgb_to_linear(apply_cells(white, self)[:, :, 0, :])
-        lum = shown @ _LUM
-        return float((lum.max() - lum.min()) * 255.0)
+        probes = np.array([[238, 238, 238], [127, 127, 127], [34, 34, 34]], dtype=np.uint8)
+        shown = apply_cells(probes, self).astype(np.float32) / 255.0   # (n, n, 3, 3)
+        lum = shown @ _LUM                                             # (n, n, 3)
+        flat = lum.reshape(-1, probes.shape[0])
+        return float((flat.max(axis=0) - flat.min(axis=0)).max() * 255.0)
 
 
 _overlays: dict[str, Overlay] = {}
