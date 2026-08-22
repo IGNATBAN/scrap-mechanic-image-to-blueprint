@@ -217,7 +217,9 @@
     "pattern.noisy": "Сильнее всего пятнят: {list}.",
     "pattern.shiny": "Блестящие блоки в набор не берутся: в игре они отражают небо и краску почти не показывают.",
     "blocks.noisyTag": "узор",
-    "blocks.shinyTag": "блестит"
+    "blocks.shinyTag": "блестит",
+    "pattern.texture": "Показать текстуру блоков",
+    "pattern.textureHint": "Рисует предпросмотр в несколько пикселей на блок и кладёт внутрь настоящую текстуру из папки игры. Видно вблизи: швы бетона, доски, полосы. Только в локальной версии — текстуры игры в проект не копируются."
   },
   "en": {
     "lang.name": "English",
@@ -432,6 +434,8 @@
     "pattern.noisy": "The most mottled here: {list}.",
     "pattern.shiny": "Shiny blocks are left out: in game they reflect the sky and barely show the paint.",
     "blocks.noisyTag": "pattern",
-    "blocks.shinyTag": "shiny"
+    "blocks.shinyTag": "shiny",
+    "pattern.texture": "Show block textures",
+    "pattern.textureHint": "Draws the preview at several pixels per block and puts the real texture from the game folder inside each one — concrete seams, planks, stripes. Local version only: the game's textures are not copied into the project."
   }
 }

@@ -85,6 +85,8 @@ async function loadConfig() {
   $('blockList').addEventListener('change', () => schedule());
   $('blocksNote').textContent = c.materialsReady ? t('blocks.count', { n: c.materials.length }) : '(таблица не собрана)';
   if (!c.materialsReady) $('useBlocks').disabled = true;
+  // без установленной игры текстуры взять неоткуда
+  if (!c.textureReady) { $('texture').disabled = true; $('texture').checked = false; }
 
   $('target').value = c.target;
   $('targetOut').textContent = c.target;
@@ -237,6 +239,7 @@ function params() {
     // ориентации. Сервер сам выключит его при дроблении: после сварки
     // модулей фазу не предсказать, а неверная фаза хуже, чем никакой.
     pattern: $('pattern').checked,
+    texture: $('texture').checked,
     orientation: getOrientation(),
     merge: $('merge').checked,
     max_bound: +$('maxBound').value,
@@ -277,7 +280,7 @@ async function run() {
       state.palette = data.palette;
       $('paletteInfo').textContent = t('palette.available', { n: data.palette.length });
     }
-    await Viewer.setGrid(data.image, state.gridW, state.gridH);
+    await Viewer.setGrid(data.image, state.gridW, state.gridH, data.stats.textureSub || 1);
     Viewer.setTiles(data.stats.modules || []);
     Viewer.setEdges(data.stats.edgesX ? { x: data.stats.edgesX.slice(1, -1), y: (data.stats.edgesY || []).slice(1, -1) } : null);
     if ($('showRects').classList.contains('on')) loadRects();
@@ -652,7 +655,7 @@ slider('lumWeight', (v) => (+v).toFixed(1));
 slider('dedupe', (v) => (+v).toFixed(3));
 ['alphaThreshold', 'maxBound', 'depth', 'target'].forEach((id) => slider(id));
 
-['resample', 'method', 'background', 'flipH', 'merge', 'serpentine', 'block', 'pattern']
+['resample', 'method', 'background', 'flipH', 'merge', 'serpentine', 'block', 'pattern', 'texture']
   .forEach((id) => $(id).addEventListener('input', schedule));
 
 $('keepRatio').addEventListener('change', () => { syncHeight(); schedule(); });

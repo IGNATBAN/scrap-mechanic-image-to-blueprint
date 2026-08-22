@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from core import (blocks, blueprint, i18n, imageproc, materials, mesh, palette, paths,
-                  quant, tiles)
+                  quant, textures, tiles)
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 
@@ -29,6 +29,9 @@ PARTS_SOFT = 50_000                    # выше — игра начинает 
 PARTS_HARD = 2_000_000                 # выше — чертёж физически не собрать
 SESSION_TTL = 6 * 3600
 MAX_EDITS = 400_000
+# Сторона текстурного предпросмотра. Выше — картинка весит мегабайты, а
+# разглядеть на экране всё равно нечего.
+TEXTURE_PIXELS = 2048
 
 app = FastAPI(title="SM_Pixel", docs_url=None, redoc_url=None)
 
@@ -274,6 +277,7 @@ def config() -> JSONResponse:
             "steamId": str(paths.steam_id(BLUEPRINTS_DIR)),
             "supported": imageproc.SUPPORTED,
             "maxCells": MAX_CELLS,
+            "textureReady": textures.available(GAME_DIR),
             "target": tiles.TARGET_PARTS,
             "languages": i18n.languages(),
         }
@@ -415,7 +419,22 @@ async def preview(request: Request) -> JSONResponse:
     ]
 
     target = int(_num(body, "target", tiles.TARGET_PARTS, 200, 200000, int))
-    token = _store_preview(imageproc.raw_png(grid), rects if len(rects) <= 300_000 else None)
+
+    # Настоящая текстура блоков — только в локальной версии: она читает
+    # файлы установленной игры, копировать их в проект мы не вправе.
+    sub = 1
+    png = None
+    if _flag(body, "texture") and grid.palette is not None and textures.available(GAME_DIR):
+        want = min(textures.SUB_MAX, max(1, TEXTURE_PIXELS // max(grid.width, grid.height, 1)))
+        if want >= 2:
+            png = textures.render_png(grid, GAME_DIR, want)
+            if png is not None:
+                sub = want
+    if png is None:
+        png = imageproc.raw_png(grid)
+        sub = 1
+    info["textureSub"] = sub
+    token = _store_preview(png, rects if len(rects) <= 300_000 else None)
     result = {
         "image": "/api/preview-image/" + token,
         "rects": "/api/preview-rects/" + token,

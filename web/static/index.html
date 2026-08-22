@@ -113,6 +113,10 @@
             и подбирает цвет под неё — предпросмотр показывает то же самое.
             <b>При дроблении узор не учитывается</b>: после сварки модулей его фазу не предсказать.</p>
           <p class="hint" id="patternNote"></p>
+          <label class="check"><input type="checkbox" id="texture"><span data-i18n="pattern.texture">Показать текстуру блоков</span></label>
+          <p class="hint" data-i18n="pattern.textureHint">Рисует предпросмотр в несколько пикселей на блок и кладёт внутрь настоящую
+            текстуру из папки игры. Видно вблизи: швы бетона, доски, полосы. Только в локальной версии —
+            текстуры игры в проект не копируются.</p>
           <label class="row"><span data-i18n="blocks.dedupe">Слить близкие</span>
             <input type="range" id="dedupe" min="0" max="0.05" step="0.002" value="0.012">
             <output id="dedupeOut">0.012</output></label>

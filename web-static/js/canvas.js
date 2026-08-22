@@ -12,7 +12,7 @@ const Viewer = (() => {
     gridW: 0, gridH: 0,
     original: null,          // Image оригинала (для режима обрезки)
     srcW: 0, srcH: 0,
-    scale: 1, ox: 0, oy: 0,
+    scale: 1, ox: 0, oy: 0, sub: 1,
     tool: 'pan',
     brush: { size: 1, color: 'EEEEEE' },
     tiles: [], rects: null, showRects: false, showOriginal: false,
@@ -86,7 +86,8 @@ const Viewer = (() => {
     if (!src) return;
     const [w, h] = sizeOf();
 
-    ctx.imageSmoothingEnabled = st.scale < 1;
+    // сглаживаем, только когда пиксель картинки мельче экранного
+    ctx.imageSmoothingEnabled = st.scale * (src === st.grid ? (st.sub || 1) : 1) < 1;
     ctx.drawImage(src, st.ox, st.oy, w * st.scale, h * st.scale);
 
     if (view() === 'grid') {
@@ -178,13 +179,16 @@ const Viewer = (() => {
     const s = st.brush.size, half = Math.floor(s / 2);
     const ctx = st.grid.getContext('2d');
     const erase = st.tool === 'erase';
+    // холст может быть крупнее сетки (режим с текстурой) — мазок кладём
+    // на весь блок целиком, а не на один его пиксель
+    const k = st.sub || 1;
     ctx.fillStyle = erase ? 'rgba(0,0,0,0)' : '#' + st.brush.color;
     for (let dy = 0; dy < s; dy++) {
       for (let dx = 0; dx < s; dx++) {
         const x = cx - half + dx, y = cy - half + dy;
         if (x < 0 || y < 0 || x >= st.gridW || y >= st.gridH) continue;
-        if (erase) ctx.clearRect(x, y, 1, 1);
-        else ctx.fillRect(x, y, 1, 1);
+        if (erase) ctx.clearRect(x * k, y * k, k, k);
+        else ctx.fillRect(x * k, y * k, k, k);
         st.stroke.push([x, y, erase ? null : st.brush.color]);
       }
     }
@@ -262,7 +266,10 @@ const Viewer = (() => {
         return;
       }
       if (st.tool === 'pick') {
-        const d = st.grid.getContext('2d').getImageData(cell.x, cell.y, 1, 1).data;
+        // берём середину блока: по краям может лежать шов текстуры
+        const k = st.sub || 1;
+        const d = st.grid.getContext('2d')
+          .getImageData(cell.x * k + (k >> 1), cell.y * k + (k >> 1), 1, 1).data;
         if (d[3] > 0) {
           const hex = [d[0], d[1], d[2]].map((v) => v.toString(16).padStart(2, '0').toUpperCase()).join('');
           st.hooks.onPick && st.hooks.onPick(hex);
@@ -360,17 +367,24 @@ const Viewer = (() => {
       resize();
     },
 
-    setGrid(url, w, h) {
+    /**
+     * sub — сколько пикселей картинки приходится на блок. Обычно 1, но в
+     * режиме «показать текстуру» сервер присылает увеличенную картинку с
+     * настоящей текстурой из игры. Раскладка при этом не меняется: блок
+     * остаётся блоком, просто внутри него есть что показать.
+     */
+    setGrid(url, w, h, sub = 1) {
       return new Promise((resolve) => {
         const img = new Image();
         img.onload = () => {
           const first = st.gridW !== w || st.gridH !== h;
           st.gridW = w; st.gridH = h;
+          st.sub = Math.max(1, sub | 0);
           st.grid = document.createElement('canvas');
-          st.grid.width = w; st.grid.height = h;
+          st.grid.width = w * st.sub; st.grid.height = h * st.sub;
           const c = st.grid.getContext('2d');
           c.imageSmoothingEnabled = false;
-          c.drawImage(img, 0, 0);
+          c.drawImage(img, 0, 0, st.grid.width, st.grid.height);
           if (first || !st.scale) fit(); else draw();
           resolve();
         };
@@ -382,6 +396,7 @@ const Viewer = (() => {
     /** Отдать сетку готовыми пикселями RGBA — так делает веб-версия:
      *  кодировать PNG на каждый пересчёт незачем, всё уже в памяти. */
     setGridPixels(rgba, w, h) {
+      st.sub = 1;
       const first = st.gridW !== w || st.gridH !== h;
       st.gridW = w;
       st.gridH = h;
